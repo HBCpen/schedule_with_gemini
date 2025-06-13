@@ -18,8 +18,12 @@ This is a browser-based schedule management application designed for intuitive u
     - List format.
     - Gemini API-powered summary (e.g., "You have 3 important events today: a morning meeting, an afternoon client visit, and an evening deadline for document submission.").
 - **Edit/Delete:** Intuitive modification and deletion of events.
-- **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions.
-- **Search:** Keyword, period, and tag-based event search.
+- **Search:** Comprehensive search functionality allowing users to find events by keywords (in title and description), specific date ranges (period), and associated tags.
+- **Recurring Events:**
+    -   Allows users to define recurrence rules for events.
+    -   The UI provides simple settings for "Daily" and "Weekly" (with selection of specific days) recurrence, including setting an interval (e.g., every 2 weeks) and an optional end date for the series.
+    -   The backend can store any valid iCalendar RRULE string, allowing for more complex rules if set programmatically or by future UI enhancements (e.g., monthly, yearly).
+    -   Recurring event instances are dynamically generated for display within the requested calendar view.
 - **Sharing (Optional):** Share specific events with other users.
 
 ### Reminder Functions

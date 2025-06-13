@@ -10,21 +10,38 @@ class Event(db.Model):
     description = db.Column(db.Text, nullable=True)
     color_tag = db.Column(db.String(20), nullable=True) # Optional
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    reminder_sent = db.Column(db.Boolean, default=False, nullable=False) # New field
+    reminder_sent = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Fields for recurrence
+    recurrence_rule = db.Column(db.String(255), nullable=True)  # To store RRULE string
+    parent_event_id = db.Column(db.Integer, db.ForeignKey('events.id'), nullable=True) # Link to master recurring event
 
     user = db.relationship('User', backref=db.backref('events', lazy=True))
+    # Relationship for recurring event instances (children)
+    # occurrences = db.relationship('Event', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
+
 
     def __repr__(self):
         return f'<Event {self.title}>'
 
-    def to_dict(self):
-        return {
+    def to_dict(self, is_occurrence=False, occurrence_start_time=None, occurrence_end_time=None):
+        data = {
             'id': self.id,
             'title': self.title,
-            'start_time': self.start_time.isoformat() + 'Z', # ISO format UTC
-            'end_time': self.end_time.isoformat() + 'Z',   # ISO format UTC
+            'start_time': (occurrence_start_time or self.start_time).isoformat() + 'Z',
+            'end_time': (occurrence_end_time or self.end_time).isoformat() + 'Z',
             'description': self.description,
             'color_tag': self.color_tag,
             'user_id': self.user_id,
-            'reminder_sent': self.reminder_sent # Added to dict
+            'reminder_sent': self.reminder_sent,
+            'recurrence_rule': self.recurrence_rule,
+            'parent_event_id': self.parent_event_id
         }
+        if is_occurrence:
+            # For occurrences, 'id' might be the parent's id if not stored separately,
+            # or a newly generated one if needed. For now, use parent's ID.
+            # We might also want a unique identifier for an occurrence, e.g., parent_id + occurrence_start_time
+            data['is_occurrence'] = True
+            # The original start_time of the series is still useful to know
+            data['series_start_time'] = self.start_time.isoformat() + 'Z'
+        return data

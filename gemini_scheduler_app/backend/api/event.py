@@ -6,6 +6,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from datetime import datetime
 import os
 from services import gemini_service
+# Updated to import event_service module
+from services import event_service
 
 # Changed url_prefix to be the full path from /api
 event_bp = Blueprint('event_bp', __name__, url_prefix='/api/events')
@@ -36,6 +38,7 @@ def create_event():
     end_time_str = data.get('end_time')
     description = data.get('description')
     color_tag = data.get('color_tag')
+    recurrence_rule = data.get('recurrence_rule') # New field
 
     if not title or not start_time_str or not end_time_str:
         return jsonify({"msg": "Title, start time, and end time are required"}), 400
@@ -55,7 +58,8 @@ def create_event():
         end_time=end_time,
         description=description,
         color_tag=color_tag,
-        user_id=current_user_id
+        user_id=current_user_id,
+        recurrence_rule=recurrence_rule # New field
     )
     db.session.add(new_event)
     db.session.commit()
@@ -65,8 +69,28 @@ def create_event():
 @jwt_required()
 def get_events():
     current_user_id = get_jwt_identity()
-    events = Event.query.filter_by(user_id=current_user_id).order_by(Event.start_time.asc()).all()
-    return jsonify([event.to_dict() for event in events]), 200
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+
+    # Defer to the event_service to get events, including expanded recurring ones
+    # The service will handle parsing dates and applying logic.
+    service_response = event_service.get_events_in_range(
+        user_id=current_user_id,
+        start_date_str=start_date_str,
+        end_date_str=end_date_str
+    )
+
+    # The service function get_events_in_range might return a tuple (data, status_code)
+    # or just data if it's always 200 on success.
+    # Based on its current implementation, it returns a list of events (success)
+    # or a dict with an error message and a status code (e.g. `{"error": "msg"}, 400`)
+    # For simplicity, assuming it now returns a list for success, and error dict for failure.
+
+    if isinstance(service_response, dict) and 'error' in service_response:
+        status_code = service_response.get('status_code', 400) # get status_code if provided, else default 400
+        return jsonify({"msg": service_response["error"]}), status_code
+
+    return jsonify(service_response), 200
 
 @event_bp.route('/<int:event_id>', methods=['GET'])
 @jwt_required()
@@ -107,6 +131,13 @@ def update_event(event_id):
 
     event.description = data.get('description', event.description)
     event.color_tag = data.get('color_tag', event.color_tag)
+    event.recurrence_rule = data.get('recurrence_rule', event.recurrence_rule) # New field
+
+    # If recurrence_rule is being cleared, or if it's a simple update to a non-recurring event,
+    # ensure parent_event_id is None.
+    # More complex logic for "this and future instances" would go here or in the service layer.
+    if not event.recurrence_rule:
+        event.parent_event_id = None
 
     db.session.commit()
     return jsonify(event.to_dict()), 200
@@ -145,3 +176,32 @@ def parse_natural_language_event():
     except Exception as e:
         print(f"Unexpected error in /parse-natural-language endpoint: {e}")
         return jsonify({"msg": "An unexpected error occurred during parsing."}), 500
+
+@event_bp.route('/search', methods=['GET'])
+@jwt_required()
+def search_events_api():
+    current_user_id = get_jwt_identity()
+    query = request.args.get('q')
+    start_date_str = request.args.get('start_date')
+    end_date_str = request.args.get('end_date')
+    tags_str = request.args.get('tags') # Expecting comma-separated string like "work,personal"
+
+    # Validate date formats (basic validation, more can be added in service)
+    # The service's parse_datetime_flexible will handle more complex validation for search as well
+    # No need for redundant validation here if service handles it.
+    # However, keeping basic format checks can be a quick feedback mechanism.
+    # For now, let's assume event_service.search_events also has robust date parsing or relies on parse_datetime_flexible
+
+    try:
+        results = event_service.search_events( # Call using event_service module
+            user_id=current_user_id,
+            query=query,
+            start_date_str=start_date_str,
+            end_date_str=end_date_str,
+            tags_str=tags_str
+        )
+        return jsonify(results), 200
+    except Exception as e:
+        # Log the exception for debugging
+        print(f"Error during event search: {e}")
+        return jsonify({"msg": "An error occurred during the search."}), 500

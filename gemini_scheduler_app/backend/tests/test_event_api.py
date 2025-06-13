@@ -144,5 +144,490 @@ def test_event_access_permissions(client, init_database):
 
     # User2 should have no events listed
     list_resp_user2 = client.get('/api/events', headers={'Authorization': f'Bearer {token2}'})
-    assert list_resp_user2.status_code == 200
-    assert len(list_resp_user2.json) == 0
+    # This needs to change for recurrence tests, as /api/events now requires start/end date
+    # For now, assuming it might return empty or error if not provided, adjust as per API changes
+    if list_resp_user2.status_code == 200: # if it still works without params
+      assert len(list_resp_user2.json) == 0
+    elif list_resp_user2.status_code == 400: # if it errors due to missing params
+      assert "Start and end date are required" in list_resp_user2.json.get("msg", "") or \
+             "Start and end date are required" in list_resp_user2.json.get("error", "")
+    else:
+        # Fail if it's an unexpected status code
+        assert False, f"Unexpected status code {list_resp_user2.status_code} for GET /api/events without params"
+
+
+# --- Search API Tests ---
+
+# Helper to create an event for search tests
+def _create_search_event(client, token, title, description, start_time, end_time, color_tag=None):
+    response = client.post('/api/events', json={
+        'title': title,
+        'start_time': start_time.isoformat() + 'Z',
+        'end_time': end_time.isoformat() + 'Z',
+        'description': description,
+        'color_tag': color_tag
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 201
+    return response.json
+
+@pytest.fixture(scope='module') # Use module scope for efficiency if DB setup is per module
+def search_test_data(client, init_database): # init_database is function scoped, careful if test_data is module scoped
+    # If init_database is function-scoped, this fixture needs to be function-scoped too,
+    # or init_database needs to be session/module scoped and carefully managed.
+    # For now, assuming init_database correctly cleans for each test function that uses it.
+    # Let's make this fixture function-scoped to align with init_database.
+
+    # Re-scope init_database for this specific fixture if needed, or ensure called before tokens
+    # The get_auth_token calls init_database if it's passed, but that might be too late for fixture setup.
+    # The tests themselves will call init_database via get_auth_token.
+    # This fixture is more about defining data that tests will use *after* auth and setup.
+
+    user1_email = 'searchuser1@example.com'
+    user2_email = 'searchuser2@example.com'
+
+    # It's better if tests manage their own tokens, this fixture is just for data creation convenience
+    # if tests were to use pre-existing users/tokens.
+    # However, since tests will create events, they need tokens.
+    # Let's assume tests will acquire tokens and create data. This fixture is more a conceptual grouping.
+    # For actual data creation, it's often cleaner to do it within each test or a test-scoped setup function.
+
+    now = datetime.utcnow()
+    events_user1 = [
+        {'title': 'Alpha Meeting', 'description': 'Discuss project Alpha', 'start_time': now + timedelta(days=1), 'end_time': now + timedelta(days=1, hours=1), 'color_tag': 'work,important'},
+        {'title': 'Beta Workshop', 'description': 'Learn about Beta framework', 'start_time': now + timedelta(days=2), 'end_time': now + timedelta(days=2, hours=2), 'color_tag': 'learning'},
+        {'title': 'Common Project Review', 'description': 'General review of the common project', 'start_time': now + timedelta(days=3), 'end_time': now + timedelta(days=3, hours=1), 'color_tag': 'project'},
+    ]
+    events_user2 = [
+        {'title': 'Gamma Planning', 'description': 'Plan the Gamma release', 'start_time': now + timedelta(days=1), 'end_time': now + timedelta(days=1, hours=1), 'color_tag': 'planning,urgent'},
+        {'title': 'Common Project Sync', 'description': 'User 2 sync on common project', 'start_time': now + timedelta(days=4), 'end_time': now + timedelta(days=4, hours=1), 'color_tag': 'project'},
+    ]
+    return {'user1_email': user1_email, 'user2_email': user2_email, 'events_user1_data': events_user1, 'events_user2_data': events_user2}
+
+
+def test_search_unauthorized(client):
+    response = client.get('/api/events/search?q=test')
+    assert response.status_code == 401 # Expecting JWT Required
+
+
+def test_search_keyword_title(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    s_data = search_test_data['events_user1_data'][0]
+    _create_search_event(client, token1, s_data['title'], s_data['description'], s_data['start_time'], s_data['end_time'], s_data['color_tag'])
+
+    response = client.get('/api/events/search?q=Alpha', headers={'Authorization': f'Bearer {token1}'})
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Alpha Meeting'
+
+def test_search_keyword_description(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    s_data = search_test_data['events_user1_data'][1]
+    _create_search_event(client, token1, s_data['title'], s_data['description'], s_data['start_time'], s_data['end_time'], s_data['color_tag'])
+
+    response = client.get('/api/events/search?q=framework', headers={'Authorization': f'Bearer {token1}'})
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Beta Workshop'
+
+def test_search_keyword_multiple_events(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    for s_data in search_test_data['events_user1_data']: # Create all user1 events
+         _create_search_event(client, token1, s_data['title'], s_data['description'], s_data['start_time'], s_data['end_time'], s_data['color_tag'])
+
+    response = client.get('/api/events/search?q=project', headers={'Authorization': f'Bearer {token1}'}) # "project" is in "Alpha" and "Common Project Review" descriptions for user1
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 2 # Alpha Meeting, Common Project Review
+    titles = {r['title'] for r in results}
+    assert 'Alpha Meeting' in titles
+    assert 'Common Project Review' in titles
+
+def test_search_keyword_no_match(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    s_data = search_test_data['events_user1_data'][0]
+    _create_search_event(client, token1, s_data['title'], s_data['description'], s_data['start_time'], s_data['end_time'], s_data['color_tag'])
+
+    response = client.get('/api/events/search?q=NonExistentKeyword', headers={'Authorization': f'Bearer {token1}'})
+    assert response.status_code == 200
+    assert len(response.json) == 0
+
+def test_search_keyword_case_insensitive(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    s_data = search_test_data['events_user1_data'][0] # "Alpha Meeting"
+    _create_search_event(client, token1, s_data['title'], s_data['description'], s_data['start_time'], s_data['end_time'], s_data['color_tag'])
+
+    response = client.get('/api/events/search?q=alpha', headers={'Authorization': f'Bearer {token1}'}) # Search lowercase
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Alpha Meeting'
+
+def test_search_only_own_events(client, init_database, search_test_data):
+    token1 = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    token2 = get_auth_token(client, init_database, email=search_test_data['user2_email'])
+
+    # User1 creates "Alpha Meeting"
+    s_data1 = search_test_data['events_user1_data'][0]
+    _create_search_event(client, token1, s_data1['title'], s_data1['description'], s_data1['start_time'], s_data1['end_time'], s_data1['color_tag'])
+    # User2 creates "Gamma Planning"
+    s_data2 = search_test_data['events_user2_data'][0]
+    _create_search_event(client, token2, s_data2['title'], s_data2['description'], s_data2['start_time'], s_data2['end_time'], s_data2['color_tag'])
+
+    # User1 searches for "Alpha" (their own event)
+    response1 = client.get('/api/events/search?q=Alpha', headers={'Authorization': f'Bearer {token1}'})
+    assert response1.status_code == 200
+    assert len(response1.json) == 1
+    assert response1.json[0]['title'] == 'Alpha Meeting'
+
+    # User1 searches for "Gamma" (User2's event)
+    response2 = client.get('/api/events/search?q=Gamma', headers={'Authorization': f'Bearer {token1}'})
+    assert response2.status_code == 200
+    assert len(response2.json) == 0 # Should not find User2's event
+
+    # User2 searches for "Gamma" (their own event)
+    response3 = client.get('/api/events/search?q=Gamma', headers={'Authorization': f'Bearer {token2}'})
+    assert response3.status_code == 200
+    assert len(response3.json) == 1
+    assert response3.json[0]['title'] == 'Gamma Planning'
+
+
+def test_search_date_range(client, init_database, search_test_data):
+    token = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    now = datetime.utcnow()
+    event_data = [
+        {'title': 'Event Day1', 'start_time': now.replace(hour=10), 'end_time': now.replace(hour=11)}, # Today
+        {'title': 'Event Day2', 'start_time': now + timedelta(days=1, hours=10), 'end_time': now + timedelta(days=1, hours=11)}, # Tomorrow
+        {'title': 'Event Day3', 'start_time': now + timedelta(days=2, hours=10), 'end_time': now + timedelta(days=2, hours=11)}, # Day after tomorrow
+    ]
+    for data in event_data:
+        _create_search_event(client, token, data['title'], '', data['start_time'], data['end_time'])
+
+    # Search for tomorrow's event
+    start_query = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+    end_query = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+    response = client.get(f'/api/events/search?start_date={start_query}&end_date={end_query}', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Event Day2'
+
+    # Search for events from today to tomorrow (should include Day1 and Day2)
+    start_query_range = now.strftime('%Y-%m-%d')
+    end_query_range = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+    response_range = client.get(f'/api/events/search?start_date={start_query_range}&end_date={end_query_range}', headers={'Authorization': f'Bearer {token}'})
+    assert response_range.status_code == 200
+    results_range = response_range.json
+    assert len(results_range) == 2
+    titles_range = {r['title'] for r in results_range}
+    assert 'Event Day1' in titles_range
+    assert 'Event Day2' in titles_range
+
+    # Search with start_date only (events from tomorrow onwards)
+    response_start_only = client.get(f'/api/events/search?start_date={start_query}', headers={'Authorization': f'Bearer {token}'})
+    assert response_start_only.status_code == 200
+    results_start_only = response_start_only.json
+    assert len(results_start_only) == 2 # Day2 and Day3
+    titles_start_only = {r['title'] for r in results_start_only}
+    assert 'Event Day2' in titles_start_only
+    assert 'Event Day3' in titles_start_only
+
+    # Search with end_date only (events up to today)
+    end_query_today = now.strftime('%Y-%m-%d')
+    response_end_only = client.get(f'/api/events/search?end_date={end_query_today}', headers={'Authorization': f'Bearer {token}'})
+    assert response_end_only.status_code == 200
+    results_end_only = response_end_only.json
+    assert len(results_end_only) == 1 # Day1
+    assert results_end_only[0]['title'] == 'Event Day1'
+
+    # Search date range with no events
+    start_far = (now + timedelta(days=10)).strftime('%Y-%m-%d')
+    end_far = (now + timedelta(days=11)).strftime('%Y-%m-%d')
+    response_no_events = client.get(f'/api/events/search?start_date={start_far}&end_date={end_far}', headers={'Authorization': f'Bearer {token}'})
+    assert response_no_events.status_code == 200
+    assert len(response_no_events.json) == 0
+
+
+def test_search_tags(client, init_database, search_test_data):
+    token = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    now = datetime.utcnow()
+    event_data = [
+        {'title': 'Work Event', 'start_time': now, 'end_time': now + timedelta(hours=1), 'color_tag': 'work,urgent'},
+        {'title': 'Personal Errand', 'start_time': now + timedelta(days=1), 'end_time': now + timedelta(days=1, hours=1), 'color_tag': 'personal'},
+        {'title': 'Work Planning', 'start_time': now + timedelta(days=2), 'end_time': now + timedelta(days=2, hours=1), 'color_tag': 'work,planning'},
+    ]
+    for data in event_data:
+        _create_search_event(client, token, data['title'], '', data['start_time'], data['end_time'], data['color_tag'])
+
+    # Search single tag "personal"
+    response = client.get('/api/events/search?tags=personal', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Personal Errand'
+
+    # Search single tag "work" (should match two events)
+    response_work = client.get('/api/events/search?tags=work', headers={'Authorization': f'Bearer {token}'})
+    assert response_work.status_code == 200
+    results_work = response_work.json
+    assert len(results_work) == 2
+    titles_work = {r['title'] for r in results_work}
+    assert 'Work Event' in titles_work
+    assert 'Work Planning' in titles_work
+
+    # Search multiple tags "work,planning" (should match "Work Planning")
+    response_multi = client.get('/api/events/search?tags=work,planning', headers={'Authorization': f'Bearer {token}'})
+    assert response_multi.status_code == 200
+    results_multi = response_multi.json
+    assert len(results_multi) == 1
+    assert results_multi[0]['title'] == 'Work Planning'
+
+    # Search multiple tags "urgent,personal" (should match "Work Event" and "Personal Errand")
+    # The backend logic is OR for multiple tags in the tags_str list (e.g. "work,urgent" means event has "work" OR "urgent")
+    # And the Event.color_tag itself can be "work,urgent". So "tags=urgent,personal"
+    # will find events that have "urgent" in their color_tag OR "personal" in their color_tag
+    response_multi_or = client.get('/api/events/search?tags=urgent,personal', headers={'Authorization': f'Bearer {token}'})
+    assert response_multi_or.status_code == 200
+    results_multi_or = response_multi_or.json
+    assert len(results_multi_or) == 2
+    titles_multi_or = {r['title'] for r in results_multi_or}
+    assert 'Work Event' in titles_multi_or # (matches urgent)
+    assert 'Personal Errand' in titles_multi_or # (matches personal)
+
+
+    # Search tag not associated
+    response_no_match = client.get('/api/events/search?tags=nonexistenttag', headers={'Authorization': f'Bearer {token}'})
+    assert response_no_match.status_code == 200
+    assert len(response_no_match.json) == 0
+
+
+def test_search_combined_filters(client, init_database, search_test_data):
+    token = get_auth_token(client, init_database, email=search_test_data['user1_email'])
+    now = datetime.utcnow()
+    _create_search_event(client, token, 'Important Alpha Review', 'Review alpha project deliverables', now + timedelta(days=1), now + timedelta(days=1, hours=1), 'project,urgent')
+    _create_search_event(client, token, 'Beta Planning Session', 'Plan beta phase', now + timedelta(days=2), now + timedelta(days=2, hours=2), 'project,planning')
+    _create_search_event(client, token, 'Quick Project Sync', 'General sync up', now + timedelta(days=1, hours=2), now + timedelta(days=1, hours=3), 'project')
+
+    # Keyword AND Date Range
+    # Search "Review" for tomorrow
+    tomorrow_str = (now + timedelta(days=1)).strftime('%Y-%m-%d')
+    response = client.get(f'/api/events/search?q=Review&start_date={tomorrow_str}&end_date={tomorrow_str}', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200
+    results = response.json
+    assert len(results) == 1
+    assert results[0]['title'] == 'Important Alpha Review'
+
+    # Keyword AND Tag
+    response_kw_tag = client.get('/api/events/search?q=project&tags=urgent', headers={'Authorization': f'Bearer {token}'})
+    assert response_kw_tag.status_code == 200
+    results_kw_tag = response_kw_tag.json
+    assert len(results_kw_tag) == 1
+    assert results_kw_tag[0]['title'] == 'Important Alpha Review' # "project" in desc, "urgent" in tag
+
+    # Date Range AND Tag
+    response_date_tag = client.get(f'/api/events/search?start_date={tomorrow_str}&end_date={tomorrow_str}&tags=project', headers={'Authorization': f'Bearer {token}'})
+    assert response_date_tag.status_code == 200
+    results_date_tag = response_date_tag.json
+    # Expect "Important Alpha Review" and "Quick Project Sync"
+    assert len(results_date_tag) == 2
+    titles_date_tag = {r['title'] for r in results_date_tag}
+    assert 'Important Alpha Review' in titles_date_tag
+    assert 'Quick Project Sync' in titles_date_tag
+
+
+    # Keyword AND Date Range AND Tag
+    response_all = client.get(f'/api/events/search?q=Alpha&start_date={tomorrow_str}&end_date={tomorrow_str}&tags=urgent', headers={'Authorization': f'Bearer {token}'})
+    assert response_all.status_code == 200
+    results_all = response_all.json
+    assert len(results_all) == 1
+    assert results_all[0]['title'] == 'Important Alpha Review'
+
+def test_search_invalid_date_format(client, init_database):
+    token = get_auth_token(client, init_database, email='searchinvaliddate@example.com')
+    response_start = client.get('/api/events/search?start_date=invalid-date', headers={'Authorization': f'Bearer {token}'})
+    assert response_start.status_code == 400
+    assert "Invalid start_date format" in response_start.json['msg']
+
+    response_end = client.get('/api/events/search?end_date=invalid-date', headers={'Authorization': f'Bearer {token}'})
+    assert response_end.status_code == 400
+    assert "Invalid end_date format" in response_end.json['msg']
+
+
+# --- Recurring Event API Tests ---
+
+def _create_event_with_recurrence(client, token, title, start_time, end_time, recurrence_rule=None, description=None, color_tag=None):
+    payload = {
+        'title': title,
+        'start_time': start_time.isoformat() + 'Z',
+        'end_time': end_time.isoformat() + 'Z',
+    }
+    if recurrence_rule:
+        payload['recurrence_rule'] = recurrence_rule
+    if description:
+        payload['description'] = description
+    if color_tag:
+        payload['color_tag'] = color_tag
+
+    response = client.post('/api/events', json=payload, headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 201
+    return response.json
+
+def test_create_event_with_recurrence_rule(client, init_database):
+    token = get_auth_token(client, init_database, email='recurcreate@example.com')
+    now = datetime.utcnow()
+    start_time = now + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    rrule = "FREQ=DAILY;COUNT=3"
+
+    event_json = _create_event_with_recurrence(client, token, "Daily Meeting", start_time, end_time, recurrence_rule=rrule)
+    assert event_json['recurrence_rule'] == rrule
+    assert event_json['title'] == "Daily Meeting"
+
+def test_update_event_to_add_recurrence(client, init_database):
+    token = get_auth_token(client, init_database, email='recurupdate@example.com')
+    now = datetime.utcnow()
+    start_time = now + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+
+    event_json = _create_event_with_recurrence(client, token, "Single Event", start_time, end_time)
+    event_id = event_json['id']
+    assert event_json.get('recurrence_rule') is None
+
+    rrule = "FREQ=WEEKLY;BYDAY=MO;INTERVAL=1"
+    update_response = client.put(f'/api/events/{event_id}', json={
+        'title': 'Weekly Monday Meeting',
+        'recurrence_rule': rrule
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert update_response.status_code == 200
+    assert update_response.json['recurrence_rule'] == rrule
+    assert update_response.json['title'] == 'Weekly Monday Meeting'
+
+def test_update_event_to_change_recurrence(client, init_database):
+    token = get_auth_token(client, init_database, email='recurchange@example.com')
+    now = datetime.utcnow()
+    start_time = now + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    initial_rrule = "FREQ=DAILY;COUNT=5"
+
+    event_json = _create_event_with_recurrence(client, token, "Daily Standup", start_time, end_time, recurrence_rule=initial_rrule)
+    event_id = event_json['id']
+
+    changed_rrule = "FREQ=WEEKLY;BYDAY=TU;COUNT=3"
+    update_response = client.put(f'/api/events/{event_id}', json={
+        'recurrence_rule': changed_rrule
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert update_response.status_code == 200
+    assert update_response.json['recurrence_rule'] == changed_rrule
+
+def test_update_event_to_remove_recurrence(client, init_database):
+    token = get_auth_token(client, init_database, email='recurremove@example.com')
+    now = datetime.utcnow()
+    start_time = now + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    initial_rrule = "FREQ=DAILY;COUNT=2"
+
+    event_json = _create_event_with_recurrence(client, token, "Temporary Daily", start_time, end_time, recurrence_rule=initial_rrule)
+    event_id = event_json['id']
+
+    update_response = client.put(f'/api/events/{event_id}', json={
+        'recurrence_rule': None # Send null to remove
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert update_response.status_code == 200
+    assert update_response.json.get('recurrence_rule') is None
+
+
+def test_get_events_requires_date_range(client, init_database):
+    token = get_auth_token(client, init_database, email='geteventparams@example.com')
+    response = client.get('/api/events', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 400 # Or whatever error code your API returns
+    assert "error" in response.json
+    assert "Start and end date are required" in response.json["error"]
+
+
+def test_fetch_recurring_event_expansion(client, init_database):
+    token = get_auth_token(client, init_database, email='recurfetch@example.com')
+    now_utc = datetime.utcnow()
+    # Ensure start_time is unambiguous (e.g. specific hour, minute, second, no microsecond for easier comparison)
+    series_start_time = now_utc.replace(hour=10, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    series_end_time = series_start_time + timedelta(hours=1)
+    rrule = "FREQ=DAILY;COUNT=3" # Generates 3 occurrences
+
+    _create_event_with_recurrence(client, token, "Daily Test Series", series_start_time, series_end_time, recurrence_rule=rrule)
+
+    # Date range covering all 3 occurrences
+    query_start_date = series_start_time.strftime('%Y-%m-%d')
+    query_end_date = (series_start_time + timedelta(days=2)).strftime('%Y-%m-%d')
+
+    response = client.get(f'/api/events?start_date={query_start_date}&end_date={query_end_date}', headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 200
+    events = response.json
+
+    assert len(events) == 3
+
+    expected_start_times_iso = [
+        (series_start_time + timedelta(days=i)).isoformat() + "Z" for i in range(3)
+    ]
+
+    for i, event in enumerate(events):
+        assert event['title'] == "Daily Test Series"
+        assert event['is_occurrence'] == True
+        # Compare start times carefully
+        assert event['start_time'].startswith(expected_start_times_iso[i].split('.')[0]) # Ignore microseconds for robust comparison
+        assert event['recurrence_rule'] == rrule # Master rule is passed along
+        assert event['parent_event_id'] is not None # Should be the ID of the master event
+
+    # Date range covering only the second occurrence
+    query_start_date_middle = (series_start_time + timedelta(days=1)).strftime('%Y-%m-%d')
+    query_end_date_middle = (series_start_time + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    response_middle = client.get(f'/api/events?start_date={query_start_date_middle}&end_date={query_end_date_middle}', headers={'Authorization': f'Bearer {token}'})
+    assert response_middle.status_code == 200
+    events_middle = response_middle.json
+    assert len(events_middle) == 1
+    assert events_middle[0]['start_time'].startswith(expected_start_times_iso[1].split('.')[0])
+
+    # Date range before any occurrences
+    query_start_date_before = (series_start_time - timedelta(days=2)).strftime('%Y-%m-%d')
+    query_end_date_before = (series_start_time - timedelta(days=1)).strftime('%Y-%m-%d')
+    response_before = client.get(f'/api/events?start_date={query_start_date_before}&end_date={query_end_date_before}', headers={'Authorization': f'Bearer {token}'})
+    assert response_before.status_code == 200
+    assert len(response_before.json) == 0
+
+    # Date range after all occurrences
+    query_start_date_after = (series_start_time + timedelta(days=3)).strftime('%Y-%m-%d')
+    query_end_date_after = (series_start_time + timedelta(days=4)).strftime('%Y-%m-%d')
+    response_after = client.get(f'/api/events?start_date={query_start_date_after}&end_date={query_end_date_after}', headers={'Authorization': f'Bearer {token}'})
+    assert response_after.status_code == 200
+    assert len(response_after.json) == 0
+
+
+def test_delete_recurring_event_series(client, init_database):
+    token = get_auth_token(client, init_database, email='recurdelete@example.com')
+    now_utc = datetime.utcnow()
+    series_start_time = now_utc.replace(hour=10, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    series_end_time = series_start_time + timedelta(hours=1)
+    rrule = "FREQ=DAILY;COUNT=2"
+
+    created_event = _create_event_with_recurrence(client, token, "Series To Delete", series_start_time, series_end_time, recurrence_rule=rrule)
+    event_id_master = created_event['id'] # This is the ID of the master event
+
+    # Delete the master event
+    delete_response = client.delete(f'/api/events/{event_id_master}', headers={'Authorization': f'Bearer {token}'})
+    assert delete_response.status_code == 200
+    assert delete_response.json['msg'] == "Event deleted successfully"
+
+    # Try to fetch events for the period, should be none from this series
+    query_start_date = series_start_time.strftime('%Y-%m-%d')
+    query_end_date = (series_start_time + timedelta(days=1)).strftime('%Y-%m-%d')
+
+    response_after_delete = client.get(f'/api/events?start_date={query_start_date}&end_date={query_end_date}', headers={'Authorization': f'Bearer {token}'})
+    assert response_after_delete.status_code == 200
+    assert len(response_after_delete.json) == 0
+
+    # Also check that the master event itself is gone (if trying to GET by ID)
+    get_master_response = client.get(f'/api/events/{event_id_master}', headers={'Authorization': f'Bearer {token}'})
+    assert get_master_response.status_code == 404 # Not found

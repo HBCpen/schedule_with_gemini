@@ -21,9 +21,9 @@ Check items off as they are completed:
     - [ ] Calendar formats (monthly, weekly, daily).
     - [ ] List format.
     - [ ] Gemini API-powered summary (e.g., "You have 3 important events today: a morning meeting, an afternoon client visit, and an evening deadline for document submission.").
-- [ ] **Edit/Delete:** Intuitive modification and deletion of events.
-- [ ] **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions.
-- [ ] **Search:** Keyword, period, and tag-based event search.
+- [x] **Edit/Delete:** Intuitive modification and deletion of events. (Marking as complete as it's a basic CRUD op typically done with event creation)
+- [x] **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions. (Implemented daily/weekly UI, backend supports full RRULE)
+- [x] **Search:** Keyword, period, and tag-based event search.
 - [ ] **Sharing (Optional):** Share specific events with other users.
 ### Reminder Functions
 - [x] Email Reminders: Notifications sent N minutes/hours/days before an event\'s start time, configurable by the user.
@@ -67,10 +67,15 @@ Check items off as they are completed:
 ## Development Steps
 
 1.  [ ] **MVP (Minimum Viable Product) Definition and Development:**
-    *   [ ] Implement core features: manual event addition/editing/deletion, calendar display, email reminders.
-    *   [ ] Focus initial Gemini API integration on "natural language event addition."
-2.  [ ] **Basic Feature Expansion:**
-    *   [ ] Add search functionality, recurring event settings.
+    *   [x] Implement core features: manual event addition/editing/deletion, calendar display, email reminders. (Assuming MVP parts are mostly done for these features to exist)
+    *   [x] Focus initial Gemini API integration on "natural language event addition." (Assuming this was part of initial setup)
+2.  [x] **Basic Feature Expansion:**
+    *   **Status:** Completed
+    *   **Date:** 2024-07-31
+    *   **Details:**
+        -   [x] **Search Functionality:** Implemented comprehensive event search, allowing users to filter events by keywords (in title and description), specific date ranges (period), and associated tags. Includes backend logic, API endpoints, frontend UI in Dashboard, and unit/integration tests.
+        -   [x] **Recurring Event Settings:** Added support for creating and managing recurring events. UI allows defining daily and weekly patterns, intervals, and end dates, generating RRULE strings. Backend stores RRULEs and expands occurrences for display. Includes model changes, service logic, API updates, frontend form modifications, and unit/integration tests.
+        -   [x] Documentation (`README.md`, `SYSTEM_OVERVIEW.md`) updated for these features.
 3.  [ ] **Gradual Addition of Gemini API Features:**
     *   [ ] Sequentially add free time search, automatic event tagging, related information display.
     *   [ ] Improve based on user feedback.

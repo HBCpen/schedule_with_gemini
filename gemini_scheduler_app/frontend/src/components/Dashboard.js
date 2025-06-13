@@ -8,6 +8,7 @@ import EventCalendar from './Events/EventCalendar'; // Import EventCalendar
 
 function Dashboard() {
     const [events, setEvents] = useState([]);
+    const [originalEvents, setOriginalEvents] = useState([]); // Store all events before filtering
     const [editingEvent, setEditingEvent] = useState(null);
     const [showForm, setShowForm] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -18,32 +19,162 @@ function Dashboard() {
     const [nlpError, setNlpError] = useState('');
     const [nlpLoading, setNlpLoading] = useState(false);
 
-    const fetchEvents = useCallback(async () => {
+    // State for Search
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchStartDate, setSearchStartDate] = useState('');
+    const [searchEndDate, setSearchEndDate] = useState('');
+    const [searchTags, setSearchTags] = useState('');
+    const [searchError, setSearchError] = useState('');
+    const [isSearching, setIsSearching] = useState(false); // To indicate search is active
+    const [currentCalendarView, setCurrentCalendarView] = useState({ start: null, end: null }); // For storing current calendar view range
+
+    // Modified fetchEvents to accept date range for recurrence expansion
+    const fetchEvents = useCallback(async (startDate, endDate) => {
         try {
             setLoading(true);
-            const response = await eventService.getEvents();
-            setEvents(response.data.sort((a,b) => new Date(a.start_time) - new Date(b.start_time)));
-            setError('');
+            // Construct params for getEvents to pass date range
+            const params = {};
+            if (startDate) params.start_date = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+            if (endDate) params.end_date = endDate.toISOString().split('T')[0];     // YYYY-MM-DD
+
+            // If no dates (e.g. initial load, or search active), fetch without range or rely on search
+            // The backend's get_events_in_range requires dates.
+            // For initial load, we might need a default range or a different endpoint.
+            // For now, only fetch with params if we have them for recurrence.
+            let response;
+            if(params.start_date && params.end_date){
+                response = await eventService.getEvents(params);
+            } else {
+                 // Fallback: getEvents without specific range (might not expand all recurrences from backend)
+                 // Or, if search is active, this fetch might be skipped or search results used.
+                 // This part needs careful consideration of initial load vs. view change.
+                 // For now, let's assume getEvents without params fetches non-expanded, or a default range.
+                 // The backend currently returns error if no dates for get_events_in_range.
+                 // So, we must provide *some* default range for the initial load.
+                if (!params.start_date) { // Default to a sensible range if not provided
+                    const today = new Date();
+                    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                    const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                    params.start_date = firstDayOfMonth.toISOString().split('T')[0];
+                    params.end_date = lastDayOfMonth.toISOString().split('T')[0];
+                }
+                 response = await eventService.getEvents(params);
+            }
+
+            if (response.data.msg && response.status !== 200) { // Handle error response from service
+                 setError(response.data.msg);
+                 setEvents([]);
+                 setOriginalEvents([]);
+            } else {
+                // Backend now returns events with 'start_time' and 'end_time' potentially adjusted for occurrences
+                // and includes 'is_occurrence'. Sorting should still work with these adjusted times.
+                const sortedEvents = response.data.sort((a,b) => new Date(a.start_time) - new Date(b.start_time));
+                setEvents(sortedEvents);
+                if (!isSearching) { // Only update originalEvents if not in a search context
+                    setOriginalEvents(sortedEvents);
+                }
+                setError('');
+            }
         } catch (err) {
-            setError('Failed to fetch events.');
-            console.error(err);
+            console.error("Fetch Events error: ", err);
+            const errorMessage = err.response?.data?.msg || 'Failed to fetch events.';
+            setError(errorMessage);
+            // Potentially set events to empty array or keep stale data, depending on desired UX
+            // setEvents([]);
+            // setOriginalEvents([]);
         } finally {
             setLoading(false);
         }
+    }, [isSearching]); // isSearching is a dependency now
+
+    // Initial fetch and refetch when calendar view changes
+    useEffect(() => {
+        if (currentCalendarView.start && currentCalendarView.end) {
+            fetchEvents(currentCalendarView.start, currentCalendarView.end);
+        } else {
+            // Initial load with a default range (e.g., current month)
+            const today = new Date();
+            const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            fetchEvents(firstDayOfMonth, lastDayOfMonth);
+        }
+    }, [fetchEvents, currentCalendarView]);
+
+
+    // Callback for EventCalendar to update current view range
+    const handleViewChange = useCallback((viewInfo) => {
+        // viewInfo should contain start and end dates of the new view
+        // e.g., viewInfo.start, viewInfo.end (actual properties depend on calendar library)
+        // For FullCalendar, it's often view.activeStart and view.activeEnd
+        // This is a placeholder for actual integration with a calendar library's event
+        console.log("Calendar view changed:", viewInfo);
+        // Assuming viewInfo has { start: Date, end: Date }
+        if (viewInfo.start && viewInfo.end) {
+             setCurrentCalendarView({ start: viewInfo.start, end: viewInfo.end });
+        }
+        // fetchEvents will be called by useEffect reacting to currentCalendarView change
     }, []);
 
-    useEffect(() => {
-        fetchEvents();
-    }, [fetchEvents]);
+
+    const handleSearch = async () => {
+        const params = {};
+        if (searchQuery) params.q = searchQuery;
+        if (searchStartDate) params.start_date = searchStartDate;
+        if (searchEndDate) params.end_date = searchEndDate;
+        if (searchTags) params.tags = searchTags;
+
+        if (Object.keys(params).length === 0) {
+            setSearchError("Please enter at least one search criteria.");
+            return;
+        }
+        setSearchError('');
+        setLoading(true); // Use main loading indicator for search
+        setIsSearching(true);
+
+        try {
+            const response = await eventService.searchEvents(params);
+            setEvents(response.data.sort((a,b) => new Date(a.start_time) - new Date(b.start_time)));
+            setError(''); // Clear main error
+        } catch (err) {
+            console.error("Search error:", err);
+            setSearchError(err.response?.data?.msg || "Failed to search events.");
+            setEvents(originalEvents); // Revert to original events on search failure
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const clearSearch = () => {
+        setSearchQuery('');
+        setSearchStartDate('');
+        setSearchEndDate('');
+        setSearchTags('');
+        setSearchError('');
+        if (isSearching) { // Only refetch if a search was active
+           setEvents(originalEvents); // Revert to the full list of events
+        }
+        setIsSearching(false);
+    };
 
     const handleFormSubmit = () => {
-        fetchEvents();
+        // Refetch events for the current view after form submission
+        if (currentCalendarView.start && currentCalendarView.end) {
+            fetchEvents(currentCalendarView.start, currentCalendarView.end);
+        } else {
+            const today = new Date();
+            fetchEvents(new Date(today.getFullYear(), today.getMonth(), 1), new Date(today.getFullYear(), today.getMonth() + 1, 0));
+        }
         setShowForm(false);
         setEditingEvent(null);
     };
 
     const handleEdit = (event) => {
-        setEditingEvent(event);
+        // When editing an occurrence, the event object from backend contains parent's recurrence_rule.
+        // The EventForm is designed to handle this by populating from event.recurrence_rule.
+        // The 'id' will be the master event's ID if it's an occurrence not stored separately,
+        // or the specific occurrence's ID if it's an exception (future enhancement).
+        // For now, backend sends master event ID for occurrences.
+        setEditingEvent(event); // event object from backend already has necessary fields
         setShowForm(true);
     };
 
@@ -52,11 +183,30 @@ function Dashboard() {
         setShowForm(false);
     }
 
-    const handleDelete = async (id) => {
-        if (window.confirm('Are you sure you want to delete this event?')) {
+    const handleDelete = async (eventId, eventInstanceInfo = null) => {
+        // For recurring events, need to decide: delete series or just this instance?
+        // Current backend deletes master and all implied occurrences.
+        // eventId should be the master event's ID if deleting a series.
+        // eventInstanceInfo is the event object itself, which might be an occurrence or a master.
+        let confirmMessage = 'Are you sure you want to delete this event?';
+
+        // Check if the event to be deleted (or its series) is recurring.
+        // eventInstanceInfo.recurrence_rule will exist if it's a master recurring event.
+        // eventInstanceInfo.is_occurrence will be true if it's an occurrence.
+        if (eventInstanceInfo?.recurrence_rule || eventInstanceInfo?.is_occurrence) {
+            confirmMessage = 'This is a recurring event or part of a series. Deleting it will remove the master event and all its occurrences. Are you sure?';
+        }
+
+        if (window.confirm(confirmMessage)) {
             try {
-                await eventService.deleteEvent(id);
-                fetchEvents();
+                // eventId is already the master ID (from event.id, which is master's ID for occurrences too)
+                await eventService.deleteEvent(eventId);
+                if (currentCalendarView.start && currentCalendarView.end) {
+                    fetchEvents(currentCalendarView.start, currentCalendarView.end);
+                } else {
+                     const today = new Date();
+                     fetchEvents(new Date(today.getFullYear(), today.getMonth(), 1), new Date(today.getFullYear(), today.getMonth() + 1, 0));
+                }
             } catch (err) {
                 setError('Failed to delete event.');
                 console.error(err);
@@ -137,6 +287,43 @@ function Dashboard() {
         <div>
             <h2>My Schedule</h2>
 
+            {/* Search Section */}
+            <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '20px', borderRadius: '5px' }}>
+                <h4>Search Events</h4>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                    <input
+                        type="text"
+                        placeholder="Keywords (title, description)"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{ padding: '8px', flexGrow: 1 }}
+                    />
+                    <input
+                        type="date"
+                        value={searchStartDate}
+                        onChange={(e) => setSearchStartDate(e.target.value)}
+                        style={{ padding: '8px' }}
+                    />
+                    <input
+                        type="date"
+                        value={searchEndDate}
+                        onChange={(e) => setSearchEndDate(e.target.value)}
+                        style={{ padding: '8px' }}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Tags (comma-separated)"
+                        value={searchTags}
+                        onChange={(e) => setSearchTags(e.target.value)}
+                        style={{ padding: '8px', flexGrow: 1 }}
+                    />
+                </div>
+                <button onClick={handleSearch} style={{ padding: '8px 15px', marginRight: '10px' }}>Search</button>
+                <button onClick={clearSearch} style={{ padding: '8px 15px' }}>Clear Search</button>
+                {searchError && <p style={{ color: 'red', marginTop: '10px' }}>{searchError}</p>}
+            </div>
+            <hr />
+
             <div>
                 <h4>Add Event with Natural Language (Beta)</h4>
                 <textarea
@@ -155,7 +342,7 @@ function Dashboard() {
             <hr />
 
             <button onClick={() => { setEditingEvent(null); setShowForm(!showForm); if (showForm) handleCancelEdit(); }}>
-                {showForm && !editingEvent ? 'Cancel New Event Creation' : 'Create New Event Manually'}
+                {showForm && !editingEvent ? 'Cancel New Event Creation' : (editingEvent ? 'Cancel Editing' : 'Create New Event Manually')}
             </button>
 
             {showForm && (
@@ -171,10 +358,12 @@ function Dashboard() {
             <EventCalendar
                 events={events}
                 onEventEdit={handleEdit}
-                onEventDelete={handleDelete}
+                onEventDelete={handleDelete} // Pass the possibly enhanced handleDelete
+                onViewChange={handleViewChange} // Pass callback to get view changes from calendar
             />
             <hr />
             <h3>Event List View</h3>
+            {/* EventList might also need to be aware of is_occurrence for display */}
             <EventList events={events} onEdit={handleEdit} onDelete={handleDelete} />
         </div>
     );
