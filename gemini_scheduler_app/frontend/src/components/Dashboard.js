@@ -3,6 +3,7 @@ import eventService from '../services/eventService';
 import authService from '../services/authService'; // Needed for token for NLP call
 import EventForm from './Events/EventForm';
 import EventList from './Events/EventList';
+import EventCalendar from './Events/EventCalendar'; // Import EventCalendar
 // import axios from 'axios'; // Not needed if using eventService for parseNaturalLanguageEvent
 
 function Dashboard() {
@@ -164,6 +165,16 @@ function Dashboard() {
                     onCancelEdit={handleCancelEdit}
                 />
             )}
+            <hr />
+            {/* Render EventCalendar above EventList */}
+            <h3>Event Calendar View</h3>
+            <EventCalendar
+                events={events}
+                onEventEdit={handleEdit}
+                onEventDelete={handleDelete}
+            />
+            <hr />
+            <h3>Event List View</h3>
             <EventList events={events} onEdit={handleEdit} onDelete={handleDelete} />
         </div>
     );
