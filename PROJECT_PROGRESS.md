@@ -32,10 +32,11 @@ Check items off as they are completed:
 
 ### Advanced Gemini API Features
 - [ ] **Automatic Tagging/Categorization:** Gemini API analyzes event content (e.g., "meeting," "dinner," "exercise") and suggests tags/categories.
-- [ ] **Free Time Search/Suggestion:**
-    - [ ] Natural language queries like, "What 2-hour slots are free next Monday afternoon?"
-    - [ ] Gemini API analyzes the calendar and presents available times.
-    - [ ] Assists in coordinating schedules for multiple participants (integrates with sharing).
+- [~] **Free Time Search/Suggestion:** (Backend API and service implemented)
+    - [x] Backend supports natural language queries like, "What 2-hour slots are free next Monday afternoon?"
+    - [x] Backend logic for Gemini API to analyze calendar and identify available times is implemented.
+    - [ ] UI for displaying/using these suggestions is pending.
+    - [ ] Assists in coordinating schedules for multiple participants (integrates with sharing). (Future scope)
 - [ ] **Related Information:**
     - [ ] Based on event location, Gemini API provides weather forecasts, traffic information, nearby restaurant suggestions.
     - [ ] Suggests news articles or documents related to event content (with user permission).
@@ -76,8 +77,10 @@ Check items off as they are completed:
         -   [x] **Search Functionality:** Implemented comprehensive event search, allowing users to filter events by keywords (in title and description), specific date ranges (period), and associated tags. Includes backend logic, API endpoints, frontend UI in Dashboard, and unit/integration tests.
         -   [x] **Recurring Event Settings:** Added support for creating and managing recurring events. UI allows defining daily and weekly patterns, intervals, and end dates, generating RRULE strings. Backend stores RRULEs and expands occurrences for display. Includes model changes, service logic, API updates, frontend form modifications, and unit/integration tests.
         -   [x] Documentation (`README.md`, `SYSTEM_OVERVIEW.md`) updated for these features.
-3.  [ ] **Gradual Addition of Gemini API Features:**
-    *   [ ] Sequentially add free time search, automatic event tagging, related information display.
+3.  [~] **Gradual Addition of Gemini API Features:** (Free time search backend started)
+    *   [x] **Free time search/suggestion:** Backend service and API endpoint implemented. Unit tests added.
+    *   [ ] **Automatic Tagging/Categorization:** Design and implement backend service and API endpoint.
+    *   [ ] **Related Information Display (Weather, Traffic, etc.):** Design and implement backend service and API endpoint.
     *   [ ] Improve based on user feedback.
 4.  [ ] **UI/UX Improvement:**
     *   [ ] Continuously enhance the user interface and user experience.
