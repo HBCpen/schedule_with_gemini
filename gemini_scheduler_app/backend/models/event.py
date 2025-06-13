@@ -8,7 +8,7 @@ class Event(db.Model):
     start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     end_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow) # Corrected: removed extra parenthesis
     description = db.Column(db.Text, nullable=True)
-    color_tag = db.Column(db.String(20), nullable=True) # Optional
+    color_tag = db.Column(db.Text, nullable=True) # Optional, for comma-separated tags
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     reminder_sent = db.Column(db.Boolean, default=False, nullable=False)
 

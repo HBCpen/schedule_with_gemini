@@ -1,5 +1,7 @@
 import json
 from datetime import datetime, timedelta
+from unittest.mock import patch
+from models.event import Event # Ensure Event model is imported for db checks
 
 # Helper function to get auth token, ensures user exists.
 # Uses init_database to ensure it can create the user if it's the first auth action in a test.
@@ -839,3 +841,224 @@ def test_find_free_time_api_success_with_date_range(client, init_database, mocke
     # A simple check: ensure .all() was called.
     mock_query.filter.return_value.filter.return_value.order_by.return_value.all.assert_called_once()
     mock_gemini_call.assert_called_once()
+
+
+# --- Auto Tagging Integration Tests ---
+
+@patch('api.event.gemini_service.suggest_tags_for_event')
+def test_create_event_with_auto_tagging(mock_suggest_tags, client, init_database):
+    token = get_auth_token(client, init_database, email='taguser_create@example.com')
+    start_time = datetime.utcnow() + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    event_title = "Project Kickoff Meeting"
+    event_description = "Initial meeting to discuss project scope and deliverables."
+
+    # Case 1: Successful tagging
+    mock_suggest_tags.return_value = ["project", "work"]
+    response = client.post('/api/events', json={
+        'title': event_title,
+        'start_time': start_time.isoformat() + 'Z',
+        'end_time': end_time.isoformat() + 'Z',
+        'description': event_description,
+        # No color_tag provided by user, should be auto-filled
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response.status_code == 201
+    created_event_id = response.json['id']
+    mock_suggest_tags.assert_called_with(event_title, event_description)
+
+    # Verify in DB
+    event_from_db = Event.query.get(created_event_id)
+    assert event_from_db is not None
+    assert event_from_db.color_tag == "project,work"
+    assert event_from_db.title == event_title # Ensure other fields are still correct
+
+    # Case 2: Gemini returns empty list
+    mock_suggest_tags.return_value = []
+    start_time_2 = start_time + timedelta(days=1)
+    end_time_2 = end_time + timedelta(days=1)
+    event_title_2 = "Personal errand"
+    event_description_2 = "Pick up dry cleaning"
+
+    response_empty_tags = client.post('/api/events', json={
+        'title': event_title_2,
+        'start_time': start_time_2.isoformat() + 'Z',
+        'end_time': end_time_2.isoformat() + 'Z',
+        'description': event_description_2,
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert response_empty_tags.status_code == 201
+    event_empty_tags_id = response_empty_tags.json['id']
+    mock_suggest_tags.assert_called_with(event_title_2, event_description_2)
+    event_from_db_empty = Event.query.get(event_empty_tags_id)
+    assert event_from_db_empty.color_tag == ""
+
+    # Case 3: Gemini returns default tag (e.g., ["general"])
+    mock_suggest_tags.return_value = ["general"]
+    start_time_3 = start_time + timedelta(days=2)
+    end_time_3 = end_time + timedelta(days=2)
+    event_title_3 = "Quick reminder"
+    event_description_3 = None # Test with no description
+
+    response_general_tag = client.post('/api/events', json={
+        'title': event_title_3,
+        'start_time': start_time_3.isoformat() + 'Z',
+        'end_time': end_time_3.isoformat() + 'Z',
+        'description': event_description_3,
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert response_general_tag.status_code == 201
+    event_general_tag_id = response_general_tag.json['id']
+    mock_suggest_tags.assert_called_with(event_title_3, event_description_3)
+    event_from_db_general = Event.query.get(event_general_tag_id)
+    assert event_from_db_general.color_tag == "general"
+
+    # Case 4: Gemini service raises an exception
+    mock_suggest_tags.side_effect = Exception("Gemini processing error")
+    start_time_4 = start_time + timedelta(days=3)
+    end_time_4 = end_time + timedelta(days=3)
+    event_title_4 = "Event with service error"
+    event_description_4 = "This should trigger fallback"
+
+    response_service_error = client.post('/api/events', json={
+        'title': event_title_4,
+        'start_time': start_time_4.isoformat() + 'Z',
+        'end_time': end_time_4.isoformat() + 'Z',
+        'description': event_description_4,
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert response_service_error.status_code == 201 # Event creation should still succeed
+    event_service_error_id = response_service_error.json['id']
+    mock_suggest_tags.assert_called_with(event_title_4, event_description_4)
+    event_from_db_error = Event.query.get(event_service_error_id)
+    # Based on create_event logic, color_tag becomes "" on exception
+    assert event_from_db_error.color_tag == ""
+
+
+@patch('api.event.gemini_service.suggest_tags_for_event')
+def test_update_event_with_auto_tagging(mock_suggest_tags, client, init_database):
+    token = get_auth_token(client, init_database, email='taguser_update@example.com')
+
+    # Create an initial event
+    start_time = datetime.utcnow() + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    initial_title = "Original Event Title"
+    initial_description = "Original event description."
+    initial_tags_str = "initial,tag"
+
+    # Manually create event without relying on the endpoint's auto-tagging for setup
+    # to control the initial state of color_tag precisely.
+    from app import db # Required for direct db interaction
+    user_for_event = Event.query.join(Event.user).filter_by(email='taguser_update@example.com').first()
+    if not user_for_event: # If user doesn't exist from get_auth_token, create one (simplified)
+        # This part is tricky as get_auth_token handles user creation.
+        # Assuming get_auth_token has run and user exists.
+        # A better way would be to fetch user ID from token or a fixture.
+        # For now, let's assume User table is populated by get_auth_token
+        # and we can query for the user_id if needed, or just use the token.
+        # The event creation within the test uses the API which handles user_id from token.
+        pass
+
+
+    # Create event via API to ensure it has an ID and user_id set by the system
+    # We will override its color_tag after creation for specific test cases if needed.
+    create_resp = client.post('/api/events', json={
+        'title': initial_title,
+        'start_time': start_time.isoformat() + 'Z',
+        'end_time': end_time.isoformat() + 'Z',
+        'description': initial_description,
+        'color_tag': initial_tags_str # Set initial tag for now, though create also calls suggest_tags
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert create_resp.status_code == 201
+    event_id = create_resp.json['id']
+
+    # Manually update the color_tag in DB to bypass create_event's auto-tagging for precise setup for update tests
+    event_to_update = Event.query.get(event_id)
+    assert event_to_update is not None
+    event_to_update.color_tag = initial_tags_str
+    db.session.commit()
+
+
+    # Case 1: Update title, tags should be re-evaluated and change
+    mock_suggest_tags.reset_mock() # Reset call count from create
+    mock_suggest_tags.return_value = ["updated", "project"]
+    updated_title = "New Event Title After Update"
+
+    response_title_update = client.put(f'/api/events/{event_id}', json={
+        'title': updated_title
+        # Description remains initial_description
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response_title_update.status_code == 200
+    mock_suggest_tags.assert_called_once_with(updated_title, initial_description)
+    event_from_db = Event.query.get(event_id)
+    assert event_from_db.color_tag == "updated,project"
+    assert event_from_db.title == updated_title
+
+    # Case 2: Update description, tags should be re-evaluated and change
+    mock_suggest_tags.reset_mock()
+    event_from_db.color_tag = "some,old,tags" # Reset tags for this case
+    db.session.commit()
+    mock_suggest_tags.return_value = ["description_tag"]
+    updated_description = "A brand new description for the event."
+
+    response_desc_update = client.put(f'/api/events/{event_id}', json={
+        'description': updated_description
+        # Title is now updated_title from previous step
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response_desc_update.status_code == 200
+    mock_suggest_tags.assert_called_once_with(updated_title, updated_description) # Title is sticky from previous update
+    event_from_db = Event.query.get(event_id)
+    assert event_from_db.color_tag == "description_tag"
+    assert event_from_db.description == updated_description
+
+    # Case 3: Update unrelated field (e.g., start_time), tags re-evaluated
+    mock_suggest_tags.reset_mock()
+    event_from_db.color_tag = "original,tags,again" # Reset for clarity
+    db.session.commit()
+    mock_suggest_tags.return_value = ["routine_check"]
+    new_start_time = (datetime.utcnow() + timedelta(days=5)).isoformat() + 'Z'
+    new_end_time = (datetime.utcnow() + timedelta(days=5, hours=1)).isoformat() + 'Z'
+
+    response_time_update = client.put(f'/api/events/{event_id}', json={
+        'start_time': new_start_time,
+        'end_time': new_end_time
+        # Title and description are from previous step (updated_title, updated_description)
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response_time_update.status_code == 200
+    # suggest_tags called with current title (updated_title) and description (updated_description)
+    mock_suggest_tags.assert_called_once_with(updated_title, updated_description)
+    event_from_db = Event.query.get(event_id)
+    assert event_from_db.color_tag == "routine_check"
+
+    # Case 4: Gemini returns empty list on update
+    mock_suggest_tags.reset_mock()
+    mock_suggest_tags.return_value = []
+    response_empty_on_update = client.put(f'/api/events/{event_id}', json={
+        'title': "Title leading to empty tags"
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response_empty_on_update.status_code == 200
+    event_from_db = Event.query.get(event_id)
+    assert event_from_db.color_tag == ""
+
+    # Case 5: Gemini service raises an exception on update
+    mock_suggest_tags.reset_mock()
+    tags_before_error = "stable,tags"
+    event_from_db.color_tag = tags_before_error # Set known tags
+    event_from_db.title = "Title before error" # Set known title
+    db.session.commit()
+
+    mock_suggest_tags.side_effect = Exception("Gemini service is down during update")
+    title_causing_error_update = "Update attempt causing error"
+    description_for_error_update = event_from_db.description # Keep current description
+
+    response_error_on_update = client.put(f'/api/events/{event_id}', json={
+        'title': title_causing_error_update
+    }, headers={'Authorization': f'Bearer {token}'})
+
+    assert response_error_on_update.status_code == 200 # Update itself should succeed
+    mock_suggest_tags.assert_called_once_with(title_causing_error_update, description_for_error_update)
+    event_from_db = Event.query.get(event_id)
+    # As per update_event logic, tags should be preserved on error
+    assert event_from_db.color_tag == tags_before_error
+    assert event_from_db.title == title_causing_error_update # Title update still happens
