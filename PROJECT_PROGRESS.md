@@ -8,14 +8,14 @@ Check items off as they are completed:
 ## Key Features
 
 ### User Management
-- [ ] Account creation, login, and logout (basic email/password authentication).
+- [x] Account creation, login, and logout (basic email/password authentication).
 - [ ] Optional profile settings (name, timezone, etc.).
 
 ### Schedule Management
-- [ ] **Manual Entry:** Input title, start/end times, location, detailed notes, color-coded tags.
-- [ ] **Natural Language Input (via Gemini API):**
-    - [ ] Example: "Meeting with Mr. A in Shibuya tomorrow at 14:00, also set a reminder for document preparation."
-    - [ ] Gemini API interprets and suggests entries for date, time, location, attendees, content, and reminders.
+- [x] **Manual Entry:** Input title, start/end times, location, detailed notes, color-coded tags.
+- [x] **Natural Language Input (via Gemini API):**
+    - [x] Example: "Meeting with Mr. A in Shibuya tomorrow at 14:00, also set a reminder for document preparation."
+    - [x] Gemini API interprets and suggests entries for date, time, location, attendees, content, and reminders.
     - [ ] Users confirm/modify suggestions before saving.
 - [ ] **Event Display:**
     - [ ] Calendar formats (monthly, weekly, daily).
@@ -25,9 +25,8 @@ Check items off as they are completed:
 - [ ] **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions.
 - [ ] **Search:** Keyword, period, and tag-based event search.
 - [ ] **Sharing (Optional):** Share specific events with other users.
-
 ### Reminder Functions
-- [ ] **Email Reminders:** Notifications sent N minutes/hours/days before an event's start time, configurable by the user.
+- [x] Email Reminders: Notifications sent N minutes/hours/days before an event\'s start time, configurable by the user.
 - [ ] **Personalized Emails (via Gemini API):** Enhance reminder emails with information like weather forecasts or travel route suggestions.
 - [ ] **Browser Notifications (Optional):** Real-time alerts using Web Push API.
 
