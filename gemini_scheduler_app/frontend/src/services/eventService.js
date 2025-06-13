@@ -15,8 +15,12 @@ const createEvent = (eventData) => {
     return axios.post(API_URL, eventData, { headers: getAuthHeaders() });
 };
 
-const getEvents = () => {
-    return axios.get(API_URL, { headers: getAuthHeaders() });
+// Modified to accept query parameters for date range
+const getEvents = (params = {}) => {
+    return axios.get(API_URL, {
+        headers: getAuthHeaders(),
+        params: params
+    });
 };
 
 const getEventById = (id) => {
@@ -44,5 +48,13 @@ const eventService = {
     updateEvent,
     deleteEvent,
     parseNaturalLanguageEvent, // Added new function to export
+
+    // New function for searching events
+    searchEvents: (params) => {
+        return axios.get(`${API_URL}/search`, {
+            headers: getAuthHeaders(),
+            params: params // e.g., { q: 'keyword', start_date: '2024-01-01', ... }
+        });
+    }
 };
 export default eventService;

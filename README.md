@@ -20,8 +20,12 @@ This is a browser-based schedule management application designed for intuitive u
     -   List format.
     -   Gemini API-powered summary (e.g., "You have 3 important events today: a morning meeting, an afternoon client visit, and an evening deadline for document submission.").
 -   **Edit/Delete:** Intuitive modification and deletion of events.
--   **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions.
--   **Search:** Keyword, period, and tag-based event search.
+-   **Search:** Comprehensive search functionality allowing users to find events by keywords (in title and description), specific date ranges (period), and associated tags.
+-   **Recurring Events:**
+    -   Allows users to define recurrence rules for events.
+    -   The UI provides simple settings for "Daily" and "Weekly" (with selection of specific days) recurrence, including setting an interval (e.g., every 2 weeks) and an optional end date for the series.
+    -   The backend can store any valid iCalendar RRULE string, allowing for more complex rules if set programmatically or by future UI enhancements (e.g., monthly, yearly).
+    -   Recurring event instances are dynamically generated for display within the requested calendar view.
 -   **Sharing (Optional):** Share specific events with other users.
 
 ### Reminder Functions
@@ -51,9 +55,10 @@ This is a browser-based schedule management application designed for intuitive u
     -   Main Content Area: Monthly/weekly/daily calendar display, event listings.
     -   Add Event button.
 -   **Add/Edit Event Modal/Screen:**
-    -   Forms for title, date/time (start/end), location, detailed notes, recurrence settings, reminder settings, tag selection, color coding.
+    -   Forms for title, date/time (start/end), location, detailed notes, tag selection, and color coding.
+    -   **Recurrence Settings:** Dedicated section to define recurrence, including frequency (e.g., daily, weekly), interval, days of the week (for weekly), and an optional end date for the series.
     -   Natural language input area (for Gemini API).
--   **Event Detail Modal/Screen:** Confirmation of registered content, edit/delete buttons. Area for Gemini API-provided related information.
+-   **Event Detail Modal/Screen:** Confirmation of registered content, edit/delete buttons. For recurring events, indicates if the event is part of a series. Area for Gemini API-provided related information.
 -   **Settings Screen:** Profile settings, notification settings (email address, reminder timing), timezone, data linkage settings (for future expansion).
 
 ## Proposed Technology Stack
@@ -76,8 +81,9 @@ This is a browser-based schedule management application designed for intuitive u
 1.  **MVP (Minimum Viable Product) Definition and Development:**
     *   Implement core features: manual event addition/editing/deletion, calendar display, email reminders.
     *   Focus initial Gemini API integration on "natural language event addition."
-2.  **Basic Feature Expansion:**
-    *   Add search functionality, recurring event settings.
+2.  **Basic Feature Expansion (Completed):**
+    *   **Search Functionality:** Implemented keyword, date range, and tag-based search for events.
+    *   **Recurring Event Settings:** Added support for creating and managing recurring events with daily and weekly patterns, interval, and end dates. Backend supports full RRULE specifications.
 3.  **Gradual Addition of Gemini API Features:**
     *   Sequentially add free time search, automatic event tagging, related information display.
     *   Improve based on user feedback.
