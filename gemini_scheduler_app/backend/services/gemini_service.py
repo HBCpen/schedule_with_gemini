@@ -101,3 +101,67 @@ Provide only the JSON object in your response, without any surrounding text or m
         # print(f"Failed prompt: {prompt}") # Be careful logging full prompts if they contain sensitive info
         print(f"Failed raw response: {raw_response_text}")
         return {"error": str(e), "detail": "Failed to parse event text using Gemini.", "raw_response": raw_response_text}
+
+
+def find_free_time_slots_with_gemini(user_query: str, events_json: str):
+    model = get_gemini_model()
+    if not model:
+        return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
+
+    today_date_str = datetime.now().strftime('%Y-%m-%d')
+    prompt = f"""
+Analyze the user's request to find free time slots based on their current schedule.
+User's request: "{user_query}"
+User's current events (JSON format):
+{events_json}
+
+Today's date is {today_date_str}. Use this to resolve relative date queries like "tomorrow", "next Friday", etc.
+Consider standard working hours (e.g., 9 AM to 6 PM) if the request is general (e.g., "afternoon") unless specified otherwise.
+The free time slots should not overlap with any of the events in the provided schedule.
+The duration of the free slots should align with the user's request if specified (e.g., "a 2-hour slot"). If no duration is specified, identify reasonable blocks of free time.
+
+Return the available free time slots as a JSON array of objects. Each object in the array should have a "start_time" and "end_time", both in "YYYY-MM-DDTHH:MM:SS" ISO format.
+If no suitable free time slots are found, return an empty JSON array: [].
+
+Example of expected output for a query like "Find a 1-hour slot tomorrow morning":
+[
+  {{"start_time": "YYYY-MM-DDTHH:MM:SS (actual date and time for tomorrow morning slot 1)", "end_time": "YYYY-MM-DDTHH:MM:SS (1 hour after start_time)"}},
+  {{"start_time": "YYYY-MM-DDTHH:MM:SS (actual date and time for tomorrow morning slot 2)", "end_time": "YYYY-MM-DDTHH:MM:SS (1 hour after start_time)"}}
+]
+
+Provide only the JSON array in your response, without any surrounding text or markdown formatting like ```json ... ```.
+"""
+    try:
+        # print(f"DEBUG: Sending find_free_time prompt to Gemini: {prompt}") # Uncomment for debugging if needed
+        response = model.generate_content(prompt)
+        # print(f"DEBUG: Raw Gemini Response for find_free_time: {response.text}") # Uncomment for debugging
+
+        cleaned_response = response.text.strip()
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+        elif cleaned_response.startswith("```"):
+             cleaned_response = cleaned_response[3:]
+             if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+
+        # Gemini might return a plain list, or a string that needs to be parsed.
+        # If it's already a list (less likely for text model), use it directly.
+        # More likely, it's a string representation of a list.
+        if not cleaned_response: # Handle empty string response
+            return []
+
+        parsed_json = json.loads(cleaned_response)
+        return parsed_json
+    except json.JSONDecodeError as e:
+        raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
+        print(f"Error decoding JSON from Gemini for free time: {e}")
+        print(f"Failed raw response: {raw_response_text}")
+        return {{"error": "Invalid JSON response from Gemini", "detail": str(e), "raw_response": raw_response_text}}
+    except Exception as e:
+        raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
+        print(f"Error calling Gemini API or processing response for free time: {e}")
+        # print(f"Failed prompt: {prompt}") # Be careful logging sensitive info
+        print(f"Failed raw response: {raw_response_text}")
+        return {{"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}}

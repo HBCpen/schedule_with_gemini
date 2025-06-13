@@ -3,8 +3,9 @@ from models.event import Event
 from models.user import User
 from app import db
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+import json
 from services import gemini_service
 # Updated to import event_service module
 from services import event_service
@@ -176,6 +177,86 @@ def parse_natural_language_event():
     except Exception as e:
         print(f"Unexpected error in /parse-natural-language endpoint: {e}")
         return jsonify({"msg": "An unexpected error occurred during parsing."}), 500
+
+
+@event_bp.route('/find-free-time', methods=['POST'])
+@jwt_required()
+def find_free_time_api():
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+
+    natural_language_query = data.get('query')
+    if not natural_language_query:
+        return jsonify({"msg": "Natural language query ('query') is required in the request body"}), 400
+
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    if not gemini_api_key or gemini_api_key == "YOUR_API_KEY_HERE":
+         return jsonify({"msg": "Gemini API key not configured on the server."}), 503
+
+    start_date_str = data.get('start_date')
+    end_date_str = data.get('end_date')
+
+    if start_date_str:
+        start_date = parse_datetime(start_date_str)
+        if not start_date:
+            return jsonify({"msg": "Invalid start_date format. Use ISO format."}), 400
+    else:
+        start_date = datetime.utcnow()
+
+    if end_date_str:
+        end_date = parse_datetime(end_date_str)
+        if not end_date:
+            return jsonify({"msg": "Invalid end_date format. Use ISO format."}), 400
+    else:
+        end_date = start_date + timedelta(days=7)
+
+    if end_date < start_date:
+        return jsonify({"msg": "end_date cannot be before start_date"}), 400
+
+    try:
+        user_events = Event.query.filter(
+            Event.user_id == current_user_id,
+            Event.start_time >= start_date,
+            Event.start_time <= end_date
+        ).order_by(Event.start_time).all()
+    except Exception as e:
+        print(f"Database error fetching events: {e}")
+        return jsonify({"msg": "Error fetching user events"}), 500
+
+    events_list_for_gemini = []
+    for event_obj in user_events:
+        event_dict = event_obj.to_dict()
+        if isinstance(event_dict.get('start_time'), datetime):
+             event_dict['start_time'] = event_dict['start_time'].isoformat()
+        if isinstance(event_dict.get('end_time'), datetime):
+             event_dict['end_time'] = event_dict['end_time'].isoformat()
+        events_list_for_gemini.append({
+            "title": event_dict.get("title"),
+            "start_time": event_dict.get("start_time"),
+            "end_time": event_dict.get("end_time")
+        })
+
+    events_json_string = json.dumps(events_list_for_gemini)
+
+    try:
+        suggested_slots = gemini_service.find_free_time_slots_with_gemini(
+            user_query=natural_language_query,
+            events_json=events_json_string
+        )
+
+        if isinstance(suggested_slots, dict) and suggested_slots.get("error"):
+            error_detail = suggested_slots.get("detail", "Unknown error from Gemini service")
+            if "Gemini API not configured" in suggested_slots.get("error", ""):
+                 return jsonify({"msg": "Error with Gemini API configuration", "detail": error_detail}), 503
+            print(f"Gemini service returned an error for free time search: {error_detail}")
+            raw_response = suggested_slots.get("raw_response")
+            return jsonify({"msg": "Error finding free time slots with Gemini", "detail": error_detail, "raw_response": raw_response}), 500
+
+        return jsonify(suggested_slots), 200
+
+    except Exception as e:
+        print(f"Unexpected error in /find-free-time endpoint: {e}")
+        return jsonify({"msg": "An unexpected error occurred while finding free time."}), 500
 
 @event_bp.route('/search', methods=['GET'])
 @jwt_required()
