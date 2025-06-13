@@ -31,10 +31,10 @@ Check items off as they are completed:
 - [ ] **Browser Notifications (Optional):** Real-time alerts using Web Push API.
 
 ### Advanced Gemini API Features
-- [ ] **Automatic Tagging/Categorization:** Gemini API analyzes event content (e.g., "meeting," "dinner," "exercise") and suggests tags/categories.
+- [x] **Automatic Tagging/Categorization:** Gemini API analyzes event content (title and description) and automatically assigns relevant tags (e.g., "meeting," "work," "personal"). Tags are stored in the event's `color_tag` field, comma-separated. Implemented in `gemini_service.py` and integrated into event creation/update APIs.
 - [~] **Free Time Search/Suggestion:** (Backend API and service implemented)
     - [x] Backend supports natural language queries like, "What 2-hour slots are free next Monday afternoon?"
-    - [x] Backend logic for Gemini API to analyze calendar and identify available times is implemented.
+    *   [x] Backend logic for Gemini API to analyze calendar and identify available times is implemented.
     - [ ] UI for displaying/using these suggestions is pending.
     - [ ] Assists in coordinating schedules for multiple participants (integrates with sharing). (Future scope)
 - [ ] **Related Information:**
@@ -79,7 +79,7 @@ Check items off as they are completed:
         -   [x] Documentation (`README.md`, `SYSTEM_OVERVIEW.md`) updated for these features.
 3.  [~] **Gradual Addition of Gemini API Features:** (Free time search backend started)
     *   [x] **Free time search/suggestion:** Backend service and API endpoint implemented. Unit tests added.
-    *   [ ] **Automatic Tagging/Categorization:** Design and implement backend service and API endpoint.
+    *   [x] **Automatic Tagging/Categorization:** Implemented backend service (`gemini_service.py`) to suggest tags based on event title/description using Gemini. Integrated into event creation and update APIs (`api/event.py`) to automatically store these tags. Unit tests added.
     *   [ ] **Related Information Display (Weather, Traffic, etc.):** Design and implement backend service and API endpoint.
     *   [ ] Improve based on user feedback.
 4.  [ ] **UI/UX Improvement:**

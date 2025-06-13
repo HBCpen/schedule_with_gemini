@@ -177,3 +177,150 @@ def test_find_free_time_empty_string_response_handled_as_empty_list(monkeypatch)
 # Ensure services/gemini_service.py can be imported from that location.
 # Example: python -m pytest tests/test_gemini_service.py
 # (or simply `pytest` if __init__.py files are set up correctly for package discovery)
+
+from services.gemini_service import suggest_tags_for_event # Added import
+
+# Test cases for suggest_tags_for_event
+
+def test_suggest_tags_success(monkeypatch):
+    """
+    Tests successful tag suggestion from Gemini.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    expected_tags = ["work", "meeting"]
+    mock_gemini_response.text = json.dumps(expected_tags)
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Team Meeting", "Discuss project milestones")
+
+    assert result == expected_tags
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+    # Check that title and description were included in the prompt
+    called_prompt = mock_model_instance.generate_content.call_args[0][0]
+    assert "Team Meeting" in called_prompt
+    assert "Discuss project milestones" in called_prompt
+
+def test_suggest_tags_gemini_error_returns_default(monkeypatch):
+    """
+    Tests that a Gemini API error results in the default tag list.
+    """
+    mock_model_instance = MagicMock()
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    mock_model_instance.generate_content.side_effect = Exception("Gemini network error")
+
+    result = suggest_tags_for_event("Error case", "Test error")
+
+    assert result == ["general"]
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+
+def test_suggest_tags_invalid_json_returns_default(monkeypatch):
+    """
+    Tests that an invalid JSON response from Gemini results in the default tag list.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    mock_gemini_response.text = "this is not valid json"
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Invalid JSON", "Test invalid response")
+
+    assert result == ["general"]
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+
+def test_suggest_tags_empty_list_from_gemini(monkeypatch):
+    """
+    Tests that an empty list from Gemini is returned as such.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    mock_gemini_response.text = json.dumps([]) # Gemini returns an empty list
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Empty list", "Test empty list response")
+
+    assert result == []
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+
+def test_suggest_tags_gemini_model_none(monkeypatch):
+    """
+    Tests that if get_gemini_model returns None, default tags are returned.
+    """
+    mock_get_gemini_model = MagicMock(return_value=None)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("No model", "Test no model available")
+
+    assert result == ["general"]
+    mock_get_gemini_model.assert_called_once()
+
+def test_suggest_tags_markdown_stripping(monkeypatch):
+    """
+    Tests that markdown backticks are stripped from Gemini response.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    expected_tags = ["project", "update"]
+    mock_gemini_response.text = f"```json\n{json.dumps(expected_tags)}\n```"
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Markdown Test", "Check stripping")
+
+    assert result == expected_tags
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+
+def test_suggest_tags_unexpected_json_structure(monkeypatch):
+    """
+    Tests that an unexpected JSON structure (e.g., dict instead of list) returns default.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    # Gemini returns a dictionary instead of a list of strings
+    mock_gemini_response.text = json.dumps({"tag": "work", "confidence": 0.9})
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Unexpected JSON", "Test structure")
+
+    assert result == ["general"] # Fallback for unexpected structure
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()
+
+def test_suggest_tags_empty_string_response_from_gemini(monkeypatch):
+    """
+    Tests that an empty string response from Gemini results in default tags.
+    """
+    mock_model_instance = MagicMock()
+    mock_gemini_response = MagicMock()
+    mock_gemini_response.text = "" # Empty string response
+    mock_model_instance.generate_content.return_value = mock_gemini_response
+
+    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+
+    result = suggest_tags_for_event("Empty String", "Test empty string response")
+
+    assert result == ["general"] # As per implementation, empty string leads to "general"
+    mock_get_gemini_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once()

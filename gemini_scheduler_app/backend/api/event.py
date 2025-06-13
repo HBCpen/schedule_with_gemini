@@ -38,7 +38,7 @@ def create_event():
     start_time_str = data.get('start_time')
     end_time_str = data.get('end_time')
     description = data.get('description')
-    color_tag = data.get('color_tag')
+    # color_tag will be set by Gemini service
     recurrence_rule = data.get('recurrence_rule') # New field
 
     if not title or not start_time_str or not end_time_str:
@@ -58,10 +58,23 @@ def create_event():
         start_time=start_time,
         end_time=end_time,
         description=description,
-        color_tag=color_tag,
+        color_tag=None, # Will be updated by Gemini
         user_id=current_user_id,
         recurrence_rule=recurrence_rule # New field
     )
+
+    # Suggest and set tags
+    try:
+        tags_list = gemini_service.suggest_tags_for_event(new_event.title, new_event.description)
+        if tags_list:
+            new_event.color_tag = ",".join(tags_list)
+        else:
+            new_event.color_tag = "" # Explicitly set to empty if no tags suggested
+    except Exception as e:
+        print(f"Error suggesting tags for new event: {e}")
+        # Optionally, set a default tag or leave it None/empty
+        new_event.color_tag = "" # Or some default like "general"
+
     db.session.add(new_event)
     db.session.commit()
     return jsonify(new_event.to_dict()), 201
@@ -130,8 +143,27 @@ def update_event(event_id):
     if event.end_time < event.start_time:
         return jsonify({"msg": "End time cannot be before start time"}), 400
 
+    # Update description and title before tag suggestion
     event.description = data.get('description', event.description)
-    event.color_tag = data.get('color_tag', event.color_tag)
+    event.title = data.get('title', event.title) # Ensure title is updated if provided
+
+    # Suggest and set tags based on potentially updated title/description
+    try:
+        current_title = event.title # Already updated from data.get('title', event.title)
+        current_description = event.description # Already updated
+        tags_list = gemini_service.suggest_tags_for_event(current_title, current_description)
+        if tags_list:
+            event.color_tag = ",".join(tags_list)
+        else:
+            event.color_tag = "" # Explicitly set to empty if no tags suggested
+    except Exception as e:
+        print(f"Error suggesting tags for updated event {event.id}: {e}")
+        # Decide on fallback: keep old tags, clear them, or set a default.
+        # For now, if an error occurs, we are not changing existing tags.
+        # If specific behavior like clearing or setting default is needed, uncomment below:
+        # event.color_tag = "" # Or some default like "general"
+        pass # Keep existing tags if an error occurs during suggestion
+
     event.recurrence_rule = data.get('recurrence_rule', event.recurrence_rule) # New field
 
     # If recurrence_rule is being cleared, or if it's a simple update to a non-recurring event,

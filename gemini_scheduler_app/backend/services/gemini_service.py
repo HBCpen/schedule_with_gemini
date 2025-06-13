@@ -165,3 +165,62 @@ Provide only the JSON array in your response, without any surrounding text or ma
         # print(f"Failed prompt: {prompt}") # Be careful logging sensitive info
         print(f"Failed raw response: {raw_response_text}")
         return {{"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}}
+
+
+def suggest_tags_for_event(title: str, description: str):
+    """
+    Suggests relevant tags for an event based on its title and description using Gemini.
+    """
+    model = get_gemini_model()
+    if not model:
+        print("Error: Gemini API not configured. Cannot suggest tags.")
+        return ["general"] # Default or empty list on configuration error
+
+    prompt = f"""Analyze the following event details and suggest 1 to 3 relevant tags or categories.
+Event Title: "{title}"
+Event Description: "{description if description else 'No description provided.'}"
+
+Consider common event categories like: "meeting", "work", "personal", "appointment", "reminder", "call", "errand", "project", "deadline", "social", "exercise", "health", "finance", "education", "travel", "hobby", "family".
+
+Return your answer as a JSON array of strings. For example: ["work", "meeting"].
+If no specific tags come to mind, you can return an empty array [] or a single tag like ["general"].
+Provide only the JSON array in your response, without any surrounding text or markdown formatting like ```json ... ```.
+"""
+
+    try:
+        # print(f"DEBUG: Sending tag suggestion prompt to Gemini: {prompt}")
+        response = model.generate_content(prompt)
+        # print(f"DEBUG: Raw Gemini Response for tags: {response.text}")
+
+        cleaned_response = response.text.strip()
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:] # Remove ```json\n
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3] # Remove ```
+        elif cleaned_response.startswith("```"): # Less common but possible
+             cleaned_response = cleaned_response[3:] # Remove ```
+             if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3] # Remove ```
+
+        if not cleaned_response: # Handle empty string response from Gemini
+            print("Warning: Received empty response from Gemini for tag suggestion.")
+            return ["general"]
+
+        tags = json.loads(cleaned_response)
+        if isinstance(tags, list) and all(isinstance(tag, str) for tag in tags):
+            return tags
+        else:
+            print(f"Warning: Gemini response for tags was not a list of strings: {tags}")
+            return ["general"] # Fallback for unexpected structure
+
+    except json.JSONDecodeError as e:
+        raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
+        print(f"Error decoding JSON from Gemini for tag suggestion: {e}")
+        print(f"Failed raw response for tags: {raw_response_text}")
+        return ["general"] # Fallback for JSON parsing error
+    except Exception as e:
+        raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
+        print(f"Error calling Gemini API or processing response for tag suggestion: {e}")
+        # print(f"Failed prompt for tags: {prompt}") # Be careful logging sensitive info
+        print(f"Failed raw response for tags: {raw_response_text}")
+        return ["general"] # Fallback for other API errors
