@@ -245,7 +245,8 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
     prompt_lines = [
         f"For an event at '{event_location}' on {event_date_str} around {event_time_str}, provide:",
         "- Weather forecast: general condition, high/low temperature, precipitation chance, and a brief summary.",
-        "- Traffic overview: congestion level and a travel advisory/summary for the time around the event."
+        "- Traffic overview: congestion level and a travel advisory/summary for the time around the event.",
+        "- Relevant news articles or documents related to the event's title or description (if provided). If found, return these as a list under a 'related_content' key. Each item should be an object with 'type' (e.g., 'article', 'document'), 'title', 'source' (if available), and 'url' or 'summary'. If none found, 'related_content' should be an empty list []."
     ]
 
     # Optional: Add restaurant suggestions if title or description hint at a meal
@@ -263,10 +264,11 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
         prompt_lines.append("- Suggestions: Return an empty list for suggestions as they were not requested or applicable.")
 
 
-    prompt_lines.append("\nReturn the information as a single JSON object with keys: 'weather', 'traffic', and 'suggestions'.")
+    prompt_lines.append("\nReturn the information as a single JSON object with keys: 'weather', 'traffic', 'suggestions', and 'related_content'.")
     prompt_lines.append("The 'weather' object should contain: 'forecast_date', 'location', 'condition', 'temperature_high', 'temperature_low', 'precipitation_chance', 'summary'.")
     prompt_lines.append("The 'traffic' object should contain: 'location', 'assessment_time', 'congestion_level', 'expected_travel_advisory', 'summary'.")
     prompt_lines.append("The 'suggestions' key should hold a list of objects, each with 'type', 'name', and 'details'. If no suggestions are applicable or found, it should be an empty list [].")
+    prompt_lines.append("The 'related_content' key should hold a list of objects, each with 'type', 'title', 'source', and 'url' (or 'summary'). If none found, it should be an empty list [].")
     prompt_lines.append("Provide only the JSON object in your response, without any surrounding text or markdown formatting like ```json ... ```.")
 
     prompt = "\n".join(prompt_lines)
@@ -292,14 +294,19 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
         parsed_json = json.loads(cleaned_response.strip())
 
         # Basic validation for expected keys, can be expanded
-        if not all(k in parsed_json for k in ["weather", "traffic", "suggestions"]):
+        if not all(k in parsed_json for k in ["weather", "traffic", "suggestions", "related_content"]):
             # print(f"Warning: Gemini response missing some top-level keys. Got: {parsed_json.keys()}")
             # Attempt to return what we got, or a more specific error
-            return {"error": "Malformed response from Gemini", "detail": "Missing one or more top-level keys: 'weather', 'traffic', 'suggestions'.", "raw_response": parsed_json}
+            return {"error": "Malformed response from Gemini", "detail": "Missing one or more top-level keys: 'weather', 'traffic', 'suggestions', 'related_content'.", "raw_response": parsed_json}
 
         if not isinstance(parsed_json.get("suggestions"), list):
             # print(f"Warning: 'suggestions' field is not a list. Attempting to correct or defaulting to empty list.")
             parsed_json["suggestions"] = [] # Default to empty list if not a list
+
+        if not isinstance(parsed_json.get("related_content"), list):
+            # print(f"Warning: 'related_content' field is not a list. Attempting to correct or defaulting to empty list.")
+            parsed_json["related_content"] = [] # Default to empty list if not a list
+
 
         return parsed_json
 

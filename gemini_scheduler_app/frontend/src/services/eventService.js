@@ -41,6 +41,10 @@ const parseNaturalLanguageEvent = (text) => {
     return axios.post(`${API_URL}/parse-natural-language`, { text }, { headers: getAuthHeaders() });
 };
 
+const getEventRelatedInfo = (eventId) => {
+    return axios.get(`${API_URL}/${eventId}/related-info`, { headers: getAuthHeaders() });
+};
+
 const eventService = {
     createEvent,
     getEvents,
@@ -48,6 +52,7 @@ const eventService = {
     updateEvent,
     deleteEvent,
     parseNaturalLanguageEvent, // Added new function to export
+    getEventRelatedInfo, // Added new function to export
 
     // New function for searching events
     searchEvents: (params) => {

@@ -1,8 +1,9 @@
-import React, { useState } from 'react'; // Import useState
+import React, { useState, useEffect } from 'react'; // Import useState and useEffect
 import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import eventService from '../../services/eventService'; // Import eventService
 
 // Basic modal styles
 const modalOverlayStyle = {
@@ -31,6 +32,42 @@ const modalContentStyle = {
 const EventCalendar = ({ events, onEventEdit, onEventDelete, onViewChange }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [relatedInfo, setRelatedInfo] = useState(null);
+  const [relatedInfoLoading, setRelatedInfoLoading] = useState(false);
+  const [relatedInfoError, setRelatedInfoError] = useState('');
+
+  useEffect(() => {
+    if (selectedEvent && selectedEvent.rawEvent && selectedEvent.rawEvent.id && modalOpen) {
+        const fetchRelatedInfo = async (eventId) => {
+            setRelatedInfoLoading(true);
+            setRelatedInfo(null);
+            setRelatedInfoError('');
+            try {
+                const response = await eventService.getEventRelatedInfo(eventId);
+                // Ensure response and response.data exist before trying to access properties
+                if (response && response.data && response.status === 200) {
+                    setRelatedInfo(response.data);
+                } else {
+                    // Handle cases where response.data might be undefined or response status is not 200
+                    const errorMessage = response && response.data ? (response.data.error || response.data.detail) : 'Failed to load related information.';
+                    setRelatedInfoError(errorMessage || 'Failed to load related information.');
+                }
+            } catch (error) {
+                console.error('Error fetching related info:', error);
+                // Ensure error.response and error.response.data exist
+                const errorMessage = error.response && error.response.data ? (error.response.data.error || error.response.data.detail) : 'An error occurred while fetching related information.';
+                setRelatedInfoError(errorMessage || 'An error occurred while fetching related information.');
+            } finally {
+                setRelatedInfoLoading(false);
+            }
+        };
+        fetchRelatedInfo(selectedEvent.rawEvent.id);
+    } else {
+        // Clear related info when modal is closed or no event selected
+        setRelatedInfo(null);
+        setRelatedInfoError('');
+    }
+  }, [selectedEvent, modalOpen]); // Re-run if selectedEvent or modalOpen changes
 
   const handleEventClick = (clickInfo) => {
     const fcEvent = clickInfo.event;
@@ -140,6 +177,69 @@ const EventCalendar = ({ events, onEventEdit, onEventDelete, onViewChange }) => 
             <p><strong>Description:</strong> {selectedEvent.description || 'N/A'}</p>
             {selectedEvent.colorTag && <p><strong>Tag:</strong> <span style={{color: selectedEvent.colorTag, fontWeight:'bold'}}>{selectedEvent.colorTag}</span></p>}
 
+            <hr style={{margin: "10px 0"}}/>
+            <h4>Related Information</h4>
+            {relatedInfoLoading && <p>Loading related info...</p>}
+            {relatedInfoError && <p style={{color: 'red'}}>{relatedInfoError}</p>}
+            {relatedInfo && !relatedInfoLoading && !relatedInfoError && (
+                <div>
+                    {/* Weather Section */}
+                    {relatedInfo.weather && (
+                        <div style={{marginBottom: '10px'}}>
+                            <strong>Weather ({relatedInfo.weather.location} on {relatedInfo.weather.forecast_date}):</strong>
+                            <p>{relatedInfo.weather.summary}</p>
+                            <p>Condition: {relatedInfo.weather.condition}, Temp: {relatedInfo.weather.temperature_low}° - {relatedInfo.weather.temperature_high}°</p>
+                            <p>Precipitation: {relatedInfo.weather.precipitation_chance}</p>
+                        </div>
+                    )}
+
+                    {/* Traffic Section */}
+                    {relatedInfo.traffic && (
+                        <div style={{marginBottom: '10px'}}>
+                            <strong>Traffic ({relatedInfo.traffic.location} around {relatedInfo.traffic.assessment_time}):</strong>
+                            <p>{relatedInfo.traffic.summary}</p>
+                            <p>Congestion: {relatedInfo.traffic.congestion_level}</p>
+                            <p>Advisory: {relatedInfo.traffic.expected_travel_advisory}</p>
+                        </div>
+                    )}
+
+                    {/* Suggestions Section (Restaurants, etc.) */}
+                    {relatedInfo.suggestions && relatedInfo.suggestions.length > 0 && (
+                        <div style={{marginBottom: '10px'}}>
+                            <strong>Suggestions:</strong>
+                            <ul>
+                                {relatedInfo.suggestions.map((item, index) => (
+                                    <li key={index}>
+                                        {item.type}: <strong>{item.name}</strong> - {item.details}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Related Content Section (Articles/Documents) */}
+                    {relatedInfo.related_content && relatedInfo.related_content.length > 0 && (
+                        <div style={{marginBottom: '10px'}}>
+                            <strong>Related Content:</strong>
+                            <ul>
+                                {relatedInfo.related_content.map((content, index) => (
+                                    <li key={index}>
+                                        <strong>{content.title}</strong> ({content.type})
+                                        {content.source && <span> - Source: {content.source}</span>}
+                                        {content.url && <div><a href={content.url} target="_blank" rel="noopener noreferrer">Link</a></div>}
+                                        {content.summary && <p>{content.summary}</p>}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    )}
+
+                    {/* Message if no specific related info sections have content */}
+                    {(!relatedInfo.weather && !relatedInfo.traffic && (!relatedInfo.suggestions || relatedInfo.suggestions.length === 0) && (!relatedInfo.related_content || relatedInfo.related_content.length === 0)) && (
+                        <p>No specific related information available.</p>
+                    )}
+                </div>
+            )}
             <hr style={{margin: "10px 0"}}/>
             <button onClick={handleEditClick} style={{marginRight: '10px'}}>Edit Series</button>
             <button onClick={handleDeleteClick} style={{marginRight: '10px'}}>Delete Series</button>
