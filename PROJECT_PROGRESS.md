@@ -80,7 +80,7 @@ Check items off as they are completed:
 3.  [~] **Gradual Addition of Gemini API Features:** (Free time search backend started)
     *   [x] **Free time search/suggestion:** Backend service and API endpoint implemented. Unit tests added.
     *   [x] **Automatic Tagging/Categorization:** Implemented backend service (`gemini_service.py`) to suggest tags based on event title/description using Gemini. Integrated into event creation and update APIs (`api/event.py`) to automatically store these tags. Unit tests added.
-    *   [x] **Related Information Display (Weather, Traffic, etc.):** Backend service (`gemini_service.py`) and API endpoint (`/api/events/<id>/related-info`) implemented and unit tested. UI integration pending.
+    *   [~] **Related Information Display (Weather, Traffic, etc.):** Backend service (`gemini_service.py`) and API endpoint (`/api/events/<id>/related-info`) implemented and unit tested. UI integration pending.
     *   [ ] Improve based on user feedback.
 4.  [ ] **UI/UX Improvement:**
     *   [ ] Continuously enhance the user interface and user experience.
