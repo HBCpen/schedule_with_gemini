@@ -4,6 +4,7 @@ import authService from '../services/authService'; // Needed for token for NLP c
 import EventForm from './Events/EventForm';
 import EventList from './Events/EventList';
 import EventCalendar from './Events/EventCalendar'; // Import EventCalendar
+import SuggestedTimeSlots from './Events/SuggestedTimeSlots'; // Import SuggestedTimeSlots
 // import axios from 'axios'; // Not needed if using eventService for parseNaturalLanguageEvent
 
 function Dashboard() {
@@ -27,6 +28,14 @@ function Dashboard() {
     const [searchError, setSearchError] = useState('');
     const [isSearching, setIsSearching] = useState(false); // To indicate search is active
     const [currentCalendarView, setCurrentCalendarView] = useState({ start: null, end: null }); // For storing current calendar view range
+
+    // State for Free Time Search
+    const [freeTimeQuery, setFreeTimeQuery] = useState('');
+    const [freeTimeStartDate, setFreeTimeStartDate] = useState('');
+    const [freeTimeEndDate, setFreeTimeEndDate] = useState('');
+    const [suggestedSlots, setSuggestedSlots] = useState([]);
+    const [freeTimeSearchLoading, setFreeTimeSearchLoading] = useState(false);
+    const [freeTimeSearchError, setFreeTimeSearchError] = useState('');
 
     // Modified fetchEvents to accept date range for recurrence expansion
     const fetchEvents = useCallback(async (startDate, endDate) => {
@@ -115,6 +124,59 @@ function Dashboard() {
         // fetchEvents will be called by useEffect reacting to currentCalendarView change
     }, []);
 
+    const handleSlotSelect = (slot) => {
+        console.log('Selected slot:', slot);
+        const eventDataForForm = {
+            title: slot.description || slot.reason || freeTimeQuery || "New Event from Suggestion",
+            // Ensure start_time and end_time are in the format EventForm expects (e.g. YYYY-MM-DDTHH:MM)
+            // The API should provide ISO strings like "2024-03-15T10:00:00Z"
+            // EventForm's formatDateTimeForInput utility or direct datetime-local input compatibility needs to be kept in mind.
+            // If slot.start_time is "2024-03-15T10:00:00Z", it needs to be "2024-03-15T10:00" for datetime-local.
+            // Let's assume EventForm can handle ISO strings or we have a utility, for now direct pass.
+            start_time: slot.start_time,
+            end_time: slot.end_time,
+            description: slot.reason || slot.details || "", // Or a more structured description from slot if available
+        };
+        setEditingEvent(eventDataForForm);
+        setShowForm(true);
+        setSuggestedSlots([]); // Clear suggestions after selection
+        // Consider scrolling to the form: document.getElementById('event-form-id')?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const handleFindFreeTime = async () => {
+        if (!freeTimeQuery.trim()) {
+            setFreeTimeSearchError("Please enter a query for the free time search.");
+            setSuggestedSlots([]);
+            return;
+        }
+        setFreeTimeSearchLoading(true);
+        setFreeTimeSearchError('');
+        setSuggestedSlots([]); // Clear previous suggestions
+
+        try {
+            // Use eventService.findFreeTime (ensure it's imported)
+            const response = await eventService.findFreeTime(freeTimeQuery, freeTimeStartDate, freeTimeEndDate);
+            if (response.data && response.data.length > 0) {
+                setSuggestedSlots(response.data);
+                console.log("Suggested slots:", response.data); // Log for now
+                setFreeTimeSearchError(''); // Clear any previous error
+            } else if (response.data && response.data.length === 0) {
+                setSuggestedSlots([]);
+                setFreeTimeSearchError("No available slots found for your query.");
+            } else { // Handle cases where response.data might be missing or not an array
+                setSuggestedSlots([]);
+                setFreeTimeSearchError("Received an unexpected response from the server.");
+                console.warn("Unexpected response structure for free time search:", response);
+            }
+        } catch (err) {
+            console.error("Find Free Time error:", err);
+            const errorMessage = err.response?.data?.error || err.response?.data?.message || err.message || "Failed to find free time slots.";
+            setFreeTimeSearchError(`Failed to find free time slots. ${errorMessage}`);
+            setSuggestedSlots([]);
+        } finally {
+            setFreeTimeSearchLoading(false);
+        }
+    };
 
     const handleSearch = async () => {
         const params = {};
@@ -338,6 +400,52 @@ function Dashboard() {
                     {nlpLoading ? 'Parsing...' : 'Parse & Add Event'}
                 </button>
                 {nlpError && <p style={{color: 'red'}}>{nlpError}</p>}
+            </div>
+            <hr />
+
+            {/* Free Time Search Section */}
+            <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '20px', borderRadius: '5px' }}>
+                <h4>Find Available Time Slots</h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px' }}>
+                    <input
+                        type="text"
+                        placeholder="e.g., a 30-minute meeting next Monday"
+                        value={freeTimeQuery}
+                        onChange={(e) => setFreeTimeQuery(e.target.value)}
+                        style={{ padding: '8px' }}
+                    />
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                        <input
+                            type="date"
+                            value={freeTimeStartDate}
+                            onChange={(e) => setFreeTimeStartDate(e.target.value)}
+                            style={{ padding: '8px', flexGrow: 1 }}
+                            title="Start date for search range (optional)"
+                        />
+                        <input
+                            type="date"
+                            value={freeTimeEndDate}
+                            onChange={(e) => setFreeTimeEndDate(e.target.value)}
+                            style={{ padding: '8px', flexGrow: 1 }}
+                            title="End date for search range (optional)"
+                        />
+                    </div>
+                </div>
+                <button
+                    onClick={handleFindFreeTime}
+                    style={{ padding: '8px 15px' }}
+                    disabled={freeTimeSearchLoading}
+                >
+                    {freeTimeSearchLoading ? 'Searching...' : 'Find Time'}
+                </button>
+                {freeTimeSearchLoading && <p>Loading suggestions...</p>}
+                {freeTimeSearchError && <p style={{ color: 'red' }}>{freeTimeSearchError}</p>}
+                {!freeTimeSearchLoading && !freeTimeSearchError && (
+                    <SuggestedTimeSlots
+                        slots={suggestedSlots}
+                        onSlotSelect={handleSlotSelect} // Pass the new handler
+                    />
+                )}
             </div>
             <hr />
 
