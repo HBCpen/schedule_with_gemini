@@ -1098,7 +1098,8 @@ def test_get_related_info_success(mock_get_related_info, client, init_database):
     mock_response_data = {
         "weather": {"condition": "Sunny"},
         "traffic": {"congestion_level": "Low"},
-        "suggestions": []
+        "suggestions": [],
+        "related_content": [{"type": "article", "title": "Test Article", "url": "http://example.com/test"}]
     }
     mock_get_related_info.return_value = mock_response_data
 

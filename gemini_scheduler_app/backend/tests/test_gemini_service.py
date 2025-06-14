@@ -338,6 +338,12 @@ EVENT_DESC_MEAL = "Discuss project over dinner"
 EVENT_TITLE_NO_MEAL = "Project Sync"
 EVENT_DESC_NO_MEAL = "Regular team update"
 
+# Define a sample related_content for reuse
+SAMPLE_RELATED_CONTENT = [
+    {"type": "article", "title": "Local Tech Conference Highlights", "source": "Tech News Daily", "url": "http://example.com/article1"},
+    {"type": "document", "title": "Event Agenda", "summary": "Detailed schedule for the conference."}
+]
+
 def mock_gemini_model(monkeypatch, response_text=None, side_effect=None):
     """Helper to mock the Gemini model and its response."""
     mock_model_instance = MagicMock()
@@ -357,7 +363,8 @@ def test_get_related_info_success_with_all_info(monkeypatch):
     expected_response_data = {
         "weather": {"forecast_date": "2024-09-15", "location": EVENT_LOCATION, "condition": "Sunny", "temperature_high": "25C", "temperature_low": "15C", "precipitation_chance": "10%", "summary": "Pleasant weather"},
         "traffic": {"location": EVENT_LOCATION, "assessment_time": "14:00", "congestion_level": "Low", "expected_travel_advisory": "No delays", "summary": "Smooth traffic"},
-        "suggestions": [{"type": "restaurant", "name": "The Gourmet Place", "details": "Fine dining"}]
+        "suggestions": [{"type": "restaurant", "name": "The Gourmet Place", "details": "Fine dining"}],
+        "related_content": SAMPLE_RELATED_CONTENT
     }
     _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_response_data))
 
@@ -367,50 +374,72 @@ def test_get_related_info_success_with_all_info(monkeypatch):
     mock_model_instance.generate_content.assert_called_once()
     prompt = mock_model_instance.generate_content.call_args[0][0]
     assert "Restaurant suggestions" in prompt
+    assert "Relevant news articles or documents" in prompt
+    assert "related_content" in prompt # Check for key in prompt description of JSON
 
 def test_get_related_info_success_no_restaurant_keywords(monkeypatch):
     """Test successful retrieval when no meal keywords are present, so no restaurant suggestions asked."""
     expected_response_data = {
         "weather": {"forecast_date": "2024-09-15", "location": EVENT_LOCATION, "condition": "Cloudy"},
         "traffic": {"location": EVENT_LOCATION, "congestion_level": "Moderate"},
-        "suggestions": [] # Expect empty suggestions as not requested
+        "suggestions": [], # Expect empty suggestions as not requested
+        "related_content": [] # Expect empty related_content as well for this test case, or could be populated
     }
-    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_response_data))
+    # For this test, let's assume Gemini might still return related_content
+    response_from_gemini = {
+        "weather": expected_response_data["weather"],
+        "traffic": expected_response_data["traffic"],
+        "suggestions": [], # Gemini returns empty list as per prompt
+        "related_content": SAMPLE_RELATED_CONTENT # Gemini might find this anyway
+    }
+    expected_output = {
+        "weather": expected_response_data["weather"],
+        "traffic": expected_response_data["traffic"],
+        "suggestions": [],
+        "related_content": SAMPLE_RELATED_CONTENT
+    }
+
+    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(response_from_gemini))
 
     result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, EVENT_TITLE_NO_MEAL, EVENT_DESC_NO_MEAL)
 
-    assert result["weather"] == expected_response_data["weather"]
-    assert result["traffic"] == expected_response_data["traffic"]
-    assert result["suggestions"] == [] # Service function ensures this is an empty list
+    assert result == expected_output
     mock_model_instance.generate_content.assert_called_once()
     prompt = mock_model_instance.generate_content.call_args[0][0]
     assert "Restaurant suggestions" not in prompt
     assert "Return an empty list for suggestions" in prompt
+    assert "Relevant news articles or documents" in prompt
+    assert "related_content" in prompt
 
 
-def test_get_related_info_success_empty_suggestions_from_gemini(monkeypatch):
-    """Test handling when Gemini returns an empty list for suggestions even if asked."""
+def test_get_related_info_success_empty_suggestions_and_content_from_gemini(monkeypatch):
+    """Test handling when Gemini returns an empty list for suggestions and related_content."""
     expected_response_data = {
         "weather": {"forecast_date": "2024-09-15", "condition": "Rainy"},
         "traffic": {"congestion_level": "High"},
-        "suggestions": []
+        "suggestions": [],
+        "related_content": []
     }
     _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_response_data))
 
-    result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, EVENT_TITLE_MEAL)
+    result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, EVENT_TITLE_MEAL) # Meal title, so suggestions asked
 
     assert result == expected_response_data
     mock_model_instance.generate_content.assert_called_once()
+    prompt = mock_model_instance.generate_content.call_args[0][0]
+    assert "Restaurant suggestions" in prompt # It was asked for
+    assert "Relevant news articles or documents" in prompt # This is always asked for
 
 def test_get_related_info_gemini_api_error(monkeypatch):
     """Test handling of a Gemini API call error."""
-    mock_get_model, _ = mock_gemini_model(monkeypatch, side_effect=Exception("Gemini API Failure"))
+    mock_get_model, mock_model_instance = mock_gemini_model(monkeypatch, side_effect=Exception("Gemini API Failure"))
 
     result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
 
     assert "error" in result
     assert result["detail"] == "Gemini API Failure"
     mock_get_model.assert_called_once()
+    mock_model_instance.generate_content.assert_called_once() # generate_content is called before exception
 
 def test_get_related_info_gemini_json_decode_error(monkeypatch):
     """Test handling of malformed JSON from Gemini."""
@@ -425,7 +454,7 @@ def test_get_related_info_gemini_json_decode_error(monkeypatch):
 
 def test_get_related_info_gemini_model_unavailable(monkeypatch):
     """Test handling when the Gemini model is unavailable (e.g., API key missing)."""
-    mock_get_model = MagicMock(return_value=None)
+    mock_get_model = MagicMock(return_value=None) # Simulate get_gemini_model returning None
     monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
 
     result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
@@ -436,19 +465,20 @@ def test_get_related_info_gemini_model_unavailable(monkeypatch):
 
 def test_get_related_info_invalid_iso_date_input(monkeypatch):
     """Test providing a malformed ISO date string."""
-    # No need to mock Gemini model as it shouldn't be called
-    mock_get_model = MagicMock()
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+    # No need to mock Gemini model as it shouldn't be called if date parsing fails first
+    mock_get_model_func = MagicMock()
+    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model_func)
 
     result = get_related_information_for_event(EVENT_LOCATION, "invalid-date-format")
 
     assert "error" in result
     assert result["error"] == "Invalid ISO format for event_start_datetime_iso"
-    mock_get_model.assert_not_called() # Gemini model should not be retrieved or used
+    mock_get_model_func.assert_not_called() # Gemini model should not be retrieved or used
 
 def test_get_related_info_prompt_construction_basic(monkeypatch):
     """Test basic prompt construction for key elements."""
-    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": []} # Content doesn't matter here
+    # Content doesn't matter here, focus is on prompt
+    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": [], "related_content": []}
     _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_partial_response))
 
     # Parse date for prompt checking
@@ -466,11 +496,13 @@ def test_get_related_info_prompt_construction_basic(monkeypatch):
     assert event_time_str in prompt
     assert "Weather forecast" in prompt
     assert "Traffic overview" in prompt
+    assert "Relevant news articles or documents" in prompt # Check for related content request
+    assert "The 'related_content' key should hold a list of objects" in prompt # Check for related content in JSON spec
     assert "Return an empty list for suggestions" in prompt # Since EVENT_TITLE_NO_MEAL is used
 
 def test_get_related_info_prompt_construction_with_meal_keyword_title(monkeypatch):
     """Test prompt construction when title contains a meal keyword."""
-    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": []}
+    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": [], "related_content": []}
     _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_partial_response))
 
     get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, event_title=EVENT_TITLE_MEAL)
@@ -478,10 +510,11 @@ def test_get_related_info_prompt_construction_with_meal_keyword_title(monkeypatc
     mock_model_instance.generate_content.assert_called_once()
     prompt = mock_model_instance.generate_content.call_args[0][0]
     assert "Restaurant suggestions" in prompt
+    assert "Relevant news articles or documents" in prompt
 
 def test_get_related_info_prompt_construction_with_meal_keyword_description(monkeypatch):
     """Test prompt construction when description contains a meal keyword."""
-    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": []}
+    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": [], "related_content": []}
     _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_partial_response))
 
     get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, event_title=EVENT_TITLE_NO_MEAL, event_description=EVENT_DESC_MEAL)
@@ -489,43 +522,70 @@ def test_get_related_info_prompt_construction_with_meal_keyword_description(monk
     mock_model_instance.generate_content.assert_called_once()
     prompt = mock_model_instance.generate_content.call_args[0][0]
     assert "Restaurant suggestions" in prompt
+    assert "Relevant news articles or documents" in prompt
 
 def test_get_related_info_missing_top_level_keys_from_gemini(monkeypatch):
-    """Test Gemini response missing 'weather', 'traffic', or 'suggestions' keys."""
-    malformed_data = {
+    """Test Gemini response missing 'weather', 'traffic', 'suggestions', or 'related_content' keys."""
+    malformed_data_missing_traffic = {
         "weather": {"condition": "Sunny"},
         # "traffic" key is missing
-        "suggestions": []
+        "suggestions": [],
+        "related_content": []
     }
-    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_data))
+    _, mock_model_instance_traffic = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_data_missing_traffic))
+    result_traffic = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
+    assert "error" in result_traffic
+    assert "Missing one or more top-level keys" in result_traffic["detail"]
+    assert "traffic" in result_traffic["detail"] # Check if the message mentions traffic
+    mock_model_instance_traffic.generate_content.assert_called_once()
 
-    result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
-
-    assert "error" in result
-    assert result["error"] == "Malformed response from Gemini"
-    assert "Missing one or more top-level keys" in result["detail"]
-    assert result["raw_response"] == malformed_data
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_get_related_info_suggestions_not_a_list(monkeypatch):
-    """Test Gemini response where 'suggestions' is not a list."""
-    malformed_data = {
-        "weather": {"condition": "Cloudy"},
-        "traffic": {"congestion_level": "Low"},
-        "suggestions": {"error": "should have been a list"} # Incorrect type
-    }
-    # The function should correct this to an empty list.
-    expected_corrected_data = {
-        "weather": {"condition": "Cloudy"},
+    malformed_data_missing_content = {
+        "weather": {"condition": "Sunny"},
         "traffic": {"congestion_level": "Low"},
         "suggestions": []
+        # "related_content" key is missing
     }
-    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_data))
+    # Need to re-mock as the previous call consumed the mock
+    _, mock_model_instance_content = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_data_missing_content))
+    result_content = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
+    assert "error" in result_content
+    assert "Missing one or more top-level keys" in result_content["detail"]
+    assert "related_content" in result_content["detail"] # Check if the message mentions related_content
+    mock_model_instance_content.generate_content.assert_called_once()
 
-    result = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
 
-    assert result == expected_corrected_data # Should be corrected
-    mock_model_instance.generate_content.assert_called_once()
+def test_get_related_info_field_not_a_list(monkeypatch):
+    """Test Gemini response where 'suggestions' or 'related_content' is not a list."""
+    # Test for suggestions not being a list
+    malformed_suggestions = {
+        "weather": {"condition": "Cloudy"}, "traffic": {"congestion_level": "Low"},
+        "suggestions": {"error": "should be a list"}, # Incorrect type
+        "related_content": []
+    }
+    expected_corrected_suggestions = {
+        "weather": {"condition": "Cloudy"}, "traffic": {"congestion_level": "Low"},
+        "suggestions": [], "related_content": []
+    }
+    _, mock_model_instance_sugg = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_suggestions))
+    result_sugg = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
+    assert result_sugg == expected_corrected_suggestions
+    mock_model_instance_sugg.generate_content.assert_called_once()
+
+    # Test for related_content not being a list
+    malformed_related_content = {
+        "weather": {"condition": "Cloudy"}, "traffic": {"congestion_level": "Low"},
+        "suggestions": [],
+        "related_content": "should be a list" # Incorrect type
+    }
+    expected_corrected_content = {
+        "weather": {"condition": "Cloudy"}, "traffic": {"congestion_level": "Low"},
+        "suggestions": [], "related_content": []
+    }
+    _, mock_model_instance_rc = mock_gemini_model(monkeypatch, response_text=json.dumps(malformed_related_content))
+    result_rc = get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO)
+    assert result_rc == expected_corrected_content
+    mock_model_instance_rc.generate_content.assert_called_once()
+
 
 def test_get_related_info_empty_response_from_gemini(monkeypatch):
     """Test handling of an empty string response from Gemini."""

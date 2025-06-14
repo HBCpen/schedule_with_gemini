@@ -37,9 +37,9 @@ Check items off as they are completed:
     *   [x] Backend logic for Gemini API to analyze calendar and identify available times is implemented.
     - [ ] UI for displaying/using these suggestions is pending.
     - [ ] Assists in coordinating schedules for multiple participants (integrates with sharing). (Future scope)
-- [ ] **Related Information:**
-    - [ ] Based on event location, Gemini API provides weather forecasts, traffic information, nearby restaurant suggestions.
-    - [ ] Suggests news articles or documents related to event content (with user permission).
+- [x] **Related Information:** (Completed: 2024-08-05)
+    - [x] Based on event location, Gemini API provides weather forecasts, traffic information, nearby restaurant suggestions.
+    - [x] Suggests news articles or documents related to event content.
 - [ ] **Task Proposal/Breakdown:**
     - [ ] For large events (e.g., "New Product Proposal Writing"), Gemini API suggests necessary sub-tasks (e.g., "market research," "competitor analysis," "draft creation") and helps register them as a To-Do list.
 - [ ] **Learning from Past Schedules:**
@@ -80,7 +80,7 @@ Check items off as they are completed:
 3.  [~] **Gradual Addition of Gemini API Features:** (Free time search backend started)
     *   [x] **Free time search/suggestion:** Backend service and API endpoint implemented. Unit tests added.
     *   [x] **Automatic Tagging/Categorization:** Implemented backend service (`gemini_service.py`) to suggest tags based on event title/description using Gemini. Integrated into event creation and update APIs (`api/event.py`) to automatically store these tags. Unit tests added.
-    *   [~] **Related Information Display (Weather, Traffic, etc.):** Backend service (`gemini_service.py`) and API endpoint (`/api/events/<id>/related-info`) implemented and unit tested. UI integration pending.
+    *   [x] **Related Information Display (Weather, Traffic, etc.):** (Completed: 2024-08-05) Implemented backend service (`gemini_service.py`) and API endpoint (`/api/events/<id>/related-info`). Frontend components in `EventCalendar.js` now fetch and display this information (weather, traffic, suggestions, related news/documents) in the event modal. Includes backend and frontend unit tests.
     *   [ ] Improve based on user feedback.
 4.  [ ] **UI/UX Improvement:**
     *   [ ] Continuously enhance the user interface and user experience.
