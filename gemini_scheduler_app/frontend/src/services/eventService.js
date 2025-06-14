@@ -60,6 +60,18 @@ const eventService = {
             headers: getAuthHeaders(),
             params: params // e.g., { q: 'keyword', start_date: '2024-01-01', ... }
         });
+    },
+
+    // New function for finding free time
+    findFreeTime: (query, startDate, endDate) => {
+        const requestBody = { query };
+        if (startDate) {
+            requestBody.start_date = startDate;
+        }
+        if (endDate) {
+            requestBody.end_date = endDate;
+        }
+        return axios.post(`${API_URL}/find-free-time`, requestBody, { headers: getAuthHeaders() });
     }
 };
 export default eventService;
