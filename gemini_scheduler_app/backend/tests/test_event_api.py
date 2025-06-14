@@ -1062,3 +1062,197 @@ def test_update_event_with_auto_tagging(mock_suggest_tags, client, init_database
     # As per update_event logic, tags should be preserved on error
     assert event_from_db.color_tag == tags_before_error
     assert event_from_db.title == title_causing_error_update # Title update still happens
+
+
+# --- Related Information API Tests ---
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_success(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_user@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+
+    # Create a user to associate with the event
+    from models.user import User # Assuming User model is available
+    from app import db # Assuming db is available
+    with client.application.app_context(): # Ensure app context for db operations
+        user = User.query.filter_by(email='relatedinfo_user@example.com').first()
+        if not user: # Should be created by get_auth_token
+            user = User(email='relatedinfo_user@example.com', password_hash='hashed') # Simplified
+            db.session.add(user)
+            db.session.commit()
+        user_id = user.id
+
+        start_time = datetime.utcnow() + timedelta(days=1)
+        event = Event(
+            title="Test Event for Related Info",
+            start_time=start_time,
+            end_time=start_time + timedelta(hours=1),
+            location="Test Location",
+            description="A test description",
+            user_id=user_id
+        )
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    mock_response_data = {
+        "weather": {"condition": "Sunny"},
+        "traffic": {"congestion_level": "Low"},
+        "suggestions": []
+    }
+    mock_get_related_info.return_value = mock_response_data
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 200
+    assert response.json == mock_response_data
+    mock_get_related_info.assert_called_once_with(
+        event_location="Test Location",
+        event_start_datetime_iso=start_time.isoformat(),
+        event_title="Test Event for Related Info",
+        event_description="A test description"
+    )
+
+def test_get_related_info_unauthenticated(client, init_database):
+    # Create a dummy event so the endpoint exists
+    token = get_auth_token(client, init_database, email='relatedinfo_owner@example.com')
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_owner@example.com').first()
+        user_id = user.id
+        start_time = datetime.utcnow() + timedelta(days=1)
+        event = Event(title="Dummy", start_time=start_time, location="Someplace", user_id=user_id)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    response = client.get(f'/api/events/{event_id}/related-info') # No auth header
+    assert response.status_code == 401
+
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_event_not_found(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_notfound@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+
+    response = client.get('/api/events/99999/related-info', headers=headers) # Non-existent event
+
+    assert response.status_code == 404
+    assert "Event not found" in response.json['msg']
+    mock_get_related_info.assert_not_called()
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_event_missing_location(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_nolocation@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_nolocation@example.com').first()
+        user_id = user.id
+        start_time = datetime.utcnow() + timedelta(days=1)
+        # Event created without a location
+        event = Event(title="No Location Event", start_time=start_time, user_id=user_id, location=None)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 400
+    assert "location and start time are required" in response.json['msg']
+    mock_get_related_info.assert_not_called()
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_event_missing_start_time(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_nostart@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_nostart@example.com').first()
+        user_id = user.id
+        # Event created without a start_time
+        event = Event(title="No StartTime Event", location="Some Location", user_id=user_id, start_time=None)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 400
+    assert "location and start time are required" in response.json['msg']
+    mock_get_related_info.assert_not_called()
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_service_gemini_config_error(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_configerror@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_configerror@example.com').first()
+        user_id = user.id
+        start_time = datetime.utcnow() + timedelta(days=1)
+        event = Event(title="Config Error Event", start_time=start_time, location="A Location", user_id=user_id)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    mock_get_related_info.return_value = {"error": "Gemini API not configured", "detail": "API key missing."}
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 503
+    assert "Related information service is currently unavailable" in response.json['msg']
+    assert "API key missing" in response.json['detail']
+    mock_get_related_info.assert_called_once()
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_service_date_format_error(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_dateerror@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_dateerror@example.com').first()
+        user_id = user.id
+        start_time = datetime.utcnow() + timedelta(days=1)
+        event = Event(title="Date Error Event", start_time=start_time, location="A Location", user_id=user_id)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    mock_get_related_info.return_value = {"error": "Invalid ISO format for event_start_datetime_iso", "detail": "Date parsing failed."}
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 400
+    assert "Error with event data" in response.json['msg']
+    assert "Date parsing failed" in response.json['detail']
+    mock_get_related_info.assert_called_once()
+
+@patch('api.event.gemini_service.get_related_information_for_event')
+def test_get_related_info_service_generic_error(mock_get_related_info, client, init_database):
+    token = get_auth_token(client, init_database, email='relatedinfo_genericerror@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    from app import db
+    from models.user import User
+    with client.application.app_context():
+        user = User.query.filter_by(email='relatedinfo_genericerror@example.com').first()
+        user_id = user.id
+        start_time = datetime.utcnow() + timedelta(days=1)
+        event = Event(title="Generic Error Event", start_time=start_time, location="A Location", user_id=user_id)
+        db.session.add(event)
+        db.session.commit()
+        event_id = event.id
+
+    mock_get_related_info.return_value = {"error": "Some other Gemini issue", "detail": "Details of the issue."}
+
+    response = client.get(f'/api/events/{event_id}/related-info', headers=headers)
+
+    assert response.status_code == 500
+    assert "Failed to retrieve related information due to a server error" in response.json['msg']
+    assert "Details of the issue" in response.json['detail']
+    mock_get_related_info.assert_called_once()

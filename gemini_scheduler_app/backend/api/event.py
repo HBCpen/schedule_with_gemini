@@ -290,6 +290,52 @@ def find_free_time_api():
         print(f"Unexpected error in /find-free-time endpoint: {e}")
         return jsonify({"msg": "An unexpected error occurred while finding free time."}), 500
 
+
+@event_bp.route('/<int:event_id>/related-info', methods=['GET'])
+@jwt_required()
+def get_event_related_information(event_id):
+    current_user_id = get_jwt_identity()
+    event = Event.query.filter_by(id=event_id, user_id=current_user_id).first()
+
+    if not event:
+        return jsonify({"msg": "Event not found or access denied"}), 404
+
+    if not event.location or not event.start_time:
+        return jsonify({"msg": "Event location and start time are required to get related information"}), 400
+
+    # Ensure start_time is in ISO format
+    try:
+        event_start_iso = event.start_time.isoformat()
+    except AttributeError:
+        # This case should ideally not happen if start_time is always a datetime object
+        return jsonify({"msg": "Invalid event start time format in database"}), 500
+
+    related_info = gemini_service.get_related_information_for_event(
+        event_location=event.location,
+        event_start_datetime_iso=event_start_iso,
+        event_title=event.title,
+        event_description=event.description
+    )
+
+    if isinstance(related_info, dict) and "error" in related_info:
+        error_detail = related_info.get("detail", "Failed to retrieve related information.")
+        # Check for specific error types if needed, e.g. Gemini API not configured vs. other errors
+        if "Gemini API not configured" in related_info.get("error", ""):
+            return jsonify({"msg": "Related information service is currently unavailable.", "detail": error_detail}), 503 # Service Unavailable
+        elif "Invalid ISO format" in related_info.get("error", ""):
+             return jsonify({"msg": "Error with event data.", "detail": error_detail}), 400 # Bad request due to data
+        # For other errors from the service, a 500 or 502 might be appropriate
+        # 502 Bad Gateway if the error implies Gemini itself failed.
+        # 500 Internal Server Error for other unexpected issues within the service.
+        # Let's use 502 if the error seems to originate from an upstream service (Gemini)
+        # This requires the service to hint at the origin of the error.
+        # For now, defaulting to 500 for generic service errors.
+        print(f"Error from get_related_information_for_event service: {error_detail}")
+        return jsonify({"msg": "Failed to retrieve related information due to a server error.", "detail": error_detail}), 500
+
+    return jsonify(related_info), 200
+
+
 @event_bp.route('/search', methods=['GET'])
 @jwt_required()
 def search_events_api():
