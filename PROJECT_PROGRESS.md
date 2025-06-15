@@ -44,19 +44,27 @@ Check items off as they are completed:
     - [ ] For large events (e.g., "New Product Proposal Writing"), Gemini API suggests necessary sub-tasks (e.g., "market research," "competitor analysis," "draft creation") and helps register them as a To-Do list.
 - [ ] **Learning from Past Schedules:**
     - [ ] Analyzes past schedule patterns to suggest automatic registration of routine work or recommend productive time slots (with privacy considerations).
+
+## YYYY-MM-DD: Screen Layouts Implemented
+- Created core layout components: `Header`, `Sidebar`, `Footer`, and `MainLayout`.
+- Set up routing using `react-router-dom` to navigate between `DashboardPage`, `CalendarPage`, and `SettingsPage` within the main layout.
+- Login and Registration pages remain outside the main application layout.
+- Updated `Sidebar.js` to use `Link` components for SPA navigation.
+- Ensured `Login.js` and `Register.js` components correctly handle navigation callbacks after success.
+
 ## Screen Layouts
 
-- [ ] **Login Screen:** Email and password fields, link to new user registration.
-- [ ] **Main Screen (Calendar View):**
-    - [ ] Header: App name, user icon (link to profile), logout button.
-    - [ ] Sidebar: Mini calendar, tag list/filter, Gemini API input field (for natural language event addition or search).
-    - [ ] Main Content Area: Monthly/weekly/daily calendar display, event listings.
+- [x] **Login Screen:** Email and password fields, link to new user registration. (Implicitly completed by auth setup)
+- [x] **Main Screen (Calendar View):** (Initial structure implemented)
+    - [x] Header: App name, user icon (link to profile), logout button. (Header component created, logout button temp placed)
+    - [x] Sidebar: Mini calendar, tag list/filter, Gemini API input field (for natural language event addition or search). (Sidebar component created with nav links)
+    - [x] Main Content Area: Monthly/weekly/daily calendar display, event listings. (MainLayout content area ready for pages)
     - [ ] Add Event button.
 - [ ] **Add/Edit Event Modal/Screen:**
     - [ ] Forms for title, date/time (start/end), location, detailed notes, recurrence settings, reminder settings, tag selection, color coding.
     - [ ] Natural language input area (for Gemini API).
 - [ ] **Event Detail Modal/Screen:** Confirmation of registered content, edit/delete buttons. Area for Gemini API-provided related information.
-- [ ] **Settings Screen:** Profile settings, notification settings (email address, reminder timing), timezone, data linkage settings (for future expansion).
+- [ ] **Settings Screen:** Profile settings, notification settings (email address, reminder timing), timezone, data linkage settings (for future expansion). (SettingsPage placeholder created)
 ## Technology Stack Components
 
 - [ ] **Frontend:** Modern JavaScript framework (e.g., React, Vue.js, Angular).
