@@ -29,6 +29,14 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
 
+    // New state variables
+    const [location, setLocation] = useState('');
+    const [reminderEnabled, setReminderEnabled] = useState(false);
+    const [reminderValue, setReminderValue] = useState(30);
+    const [reminderUnit, setReminderUnit] = useState('minutes');
+    const [naturalLanguageInput, setNaturalLanguageInput] = useState('');
+    const [isProcessingNaturalLanguage, setIsProcessingNaturalLanguage] = useState(false);
+
     // Recurrence state
     const [recurrenceRule, setRecurrenceRule] = useState(''); // Stores the final RRULE string
     const [freq, setFreq] = useState(''); // DAILY, WEEKLY, MONTHLY, YEARLY
@@ -95,11 +103,51 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             setEndTime('');
             setDescription('');
             setColorTag('');
+            // Reset new fields
+            setLocation('');
+            setReminderEnabled(false);
+            setReminderValue(30);
+            setReminderUnit('minutes');
+            setNaturalLanguageInput('');
+            // End reset new fields
             resetRecurrenceFields();
         }
         setMessage('');
         setError('');
     }, [eventToEdit]);
+
+
+    const handleProcessNaturalLanguage = async () => {
+        setIsProcessingNaturalLanguage(true);
+        setError('');
+        setMessage('');
+        try {
+            // Simulate API call
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Mocked response
+            const parsedData = {
+                title: 'Processed: ' + naturalLanguageInput.substring(0,20),
+                start_time: new Date().toISOString(),
+                end_time: new Date(new Date().getTime() + 60*60*1000).toISOString(), // 1 hour later
+                description: 'Processed description from Gemini.',
+                location: 'Processed Location from Gemini'
+            };
+
+            setTitle(parsedData.title || '');
+            setStartTime(formatDateTimeForInput(parsedData.start_time) || '');
+            setEndTime(formatDateTimeForInput(parsedData.end_time) || '');
+            setDescription(parsedData.description || '');
+            setLocation(parsedData.location || '');
+            // Clear the input after processing, or provide feedback
+            // setNaturalLanguageInput('');
+            setMessage('Natural language input processed (mocked).');
+
+        } catch (err) {
+            setError('Failed to process natural language input (mocked error).');
+        } finally {
+            setIsProcessingNaturalLanguage(false);
+        }
+    };
 
     // Helper to build RRULE string
     const buildRecurrenceRule = () => {
@@ -140,7 +188,12 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             end_time: formatInputDateTimeToISO(endTime),
             description,
             color_tag: colorTag || null, // Send null if empty
-            recurrence_rule: constructedRrule
+            recurrence_rule: constructedRrule,
+            // Add new fields to eventData
+            location: location,
+            reminder_enabled: reminderEnabled,
+            reminder_value: reminderEnabled ? parseInt(reminderValue, 10) : null,
+            reminder_unit: reminderEnabled ? reminderUnit : null,
         };
 
         // If editing an event that was an occurrence, and user now sets 'Does not repeat'
@@ -176,8 +229,24 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
         <form onSubmit={handleSubmit}>
             <h3>{eventToEdit ? (eventToEdit.is_occurrence ? 'Edit Occurrence (Modifies Series)' : 'Edit Event') : 'Create Event'}</h3>
             {eventToEdit?.is_occurrence && <p style={{color: 'orange'}}>Note: You are editing an occurrence of a recurring series. Changes will apply to the entire series.</p>}
+
+            {/* Natural Language Input Section */}
+            <div style={{ marginBottom: '20px', padding: '10px', border: '1px solid #eee', borderRadius: '5px' }}>
+                <h4>Process with Gemini (Experimental)</h4>
+                <textarea
+                    style={{ width: '95%', minHeight: '60px', marginBottom: '10px' }}
+                    value={naturalLanguageInput}
+                    onChange={(e) => setNaturalLanguageInput(e.target.value)}
+                    placeholder="e.g., 'Meeting with John tomorrow at 2pm for 1 hour at the Cafe about project update, remind me 30 minutes before'"
+                />
+                <button type="button" onClick={handleProcessNaturalLanguage} disabled={isProcessingNaturalLanguage}>
+                    {isProcessingNaturalLanguage ? 'Processing...' : 'Process with Gemini'}
+                </button>
+            </div>
+
             {message && <p style={{color: 'green'}}>{message}</p>}
             {error && <p style={{color: 'red'}}>{error}</p>}
+
             <div>
                 <label>Title:</label>
                 <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -191,12 +260,52 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
                 <input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
             </div>
             <div>
+                <label>Location:</label>
+                <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} />
+            </div>
+            <div>
                 <label>Description:</label>
                 <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
             <div>
                 <label>Color Tag (e.g., blue, red):</label>
                 <input type="text" value={colorTag} onChange={(e) => setColorTag(e.target.value)} />
+            </div>
+
+            {/* Reminder Section */}
+            <div style={{ marginTop: '10px', marginBottom: '10px', padding: '10px', border: '1px solid #eee', borderRadius: '5px' }}>
+                <h4>Reminder</h4>
+                <div>
+                    <label style={{ marginRight: '10px' }}>
+                        <input
+                            type="checkbox"
+                            checked={reminderEnabled}
+                            onChange={(e) => setReminderEnabled(e.target.checked)}
+                        />
+                        Enable Reminder
+                    </label>
+                </div>
+                {reminderEnabled && (
+                    <div style={{ display: 'flex', alignItems: 'center', marginTop: '5px' }}>
+                        <input
+                            type="number"
+                            value={reminderValue}
+                            onChange={(e) => setReminderValue(e.target.value)}
+                            min="1"
+                            style={{ width: '70px', marginRight: '5px' }}
+                        />
+                        <select
+                            value={reminderUnit}
+                            onChange={(e) => setReminderUnit(e.target.value)}
+                            style={{ marginRight: '10px' }}
+                        >
+                            <option value="minutes">minutes</option>
+                            <option value="hours">hours</option>
+                            <option value="days">days</option>
+                        </select>
+                        before event
+                    </div>
+                )}
             </div>
 
             {/* Recurrence Section */}
@@ -210,9 +319,22 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
                         // For now, let's make them explicitly choose a frequency to redefine
                         const ruleParts = eventToEdit.recurrence_rule.split(';');
                         const freqPart = ruleParts.find(part => part.startsWith('FREQ='));
-                         if (freqPart) setFreq(freqPart.split('=')[1]); else setFreq("DAILY"); // Default to daily if cannot parse
+                if (freqPart) setFreq(freqPart.split('=')[1]); else setFreq("DAILY"); // Default to daily if cannot parse
                         // More parsing logic would be needed here to fully populate form from any RRULE string.
                         // This is a simplified approach.
+                // Also populate other recurrence fields based on parsed rule if possible
+                 const intervalPart = ruleParts.find(part => part.startsWith('INTERVAL='));
+                if (intervalPart) setInterval(parseInt(intervalPart.split('=')[1], 10));
+                const byDayPart = ruleParts.find(part => part.startsWith('BYDAY='));
+                if (byDayPart) setByDay(byDayPart.split('=')[1].split(','));
+                const untilPart = ruleParts.find(part => part.startsWith('UNTIL='));
+                if (untilPart) {
+                    const untilDateStr = untilPart.split('=')[1];
+                    const year = untilDateStr.substring(0,4);
+                    const month = untilDateStr.substring(4,6);
+                    const day = untilDateStr.substring(6,8);
+                    setUntil(`${year}-${month}-${day}`);
+                }
                     }}>Modify Rule</button>
                 </div>
             )}
@@ -260,7 +382,20 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             )}
             <hr style={{margin: '20px 0'}}/>
             <button type="submit">{eventToEdit ? 'Update' : 'Create'}</button>
-            {eventToEdit && <button type="button" onClick={() => { resetRecurrenceFields(); if(onCancelEdit) onCancelEdit();}}>Cancel</button>}
+            {eventToEdit && <button type="button" onClick={() => {
+                // When cancelling, ensure all fields are reset, not just recurrence.
+                // The useEffect handles this if eventToEdit becomes null.
+                // Consider if onCancelEdit should set eventToEdit to null in parent,
+                // which would then trigger the full reset in useEffect here.
+                // For now, the existing resetRecurrenceFields and onCancelEdit is kept.
+                // A more robust reset might be:
+                // setTitle(''); setStartTime(''); setEndTime(''); etc. for all fields
+                // then call onCancelEdit().
+                // However, the parent (DashboardPage) sets eventToEdit to null on modal close,
+                // which triggers the useEffect here to reset all fields. So this should be fine.
+                resetRecurrenceFields(); // Keep specific recurrence reset for now
+                if(onCancelEdit) onCancelEdit();
+            }}>Cancel</button>}
         </form>
     );
 }

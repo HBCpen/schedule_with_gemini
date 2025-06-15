@@ -71,22 +71,16 @@ const EventCalendar = ({ events, onEventEdit, onEventDelete, onViewChange }) => 
 
   const handleEventClick = (clickInfo) => {
     const fcEvent = clickInfo.event;
-    const backendEvent = fcEvent.extendedProps.rawEvent; // Get the original event data
-
-    // Use occurrence times if available for display in modal
-    const displayStartTime = backendEvent.is_occurrence ? backendEvent.occurrence_start_time : backendEvent.start_time;
-    const displayEndTime = backendEvent.is_occurrence ? backendEvent.occurrence_end_time : backendEvent.end_time;
-
+    const backendEvent = clickInfo.event.extendedProps.rawEvent;
     setSelectedEvent({
-      id: backendEvent.id.toString(), // Use actual backend ID (master ID for occurrences)
-      title: backendEvent.title,
-      start: displayStartTime,
-      end: displayEndTime,
-      description: backendEvent.description,
-      colorTag: backendEvent.color_tag, // Corrected: was colorTag from extendedProps
-      is_occurrence: backendEvent.is_occurrence, // Pass this info
-      series_start_time: backendEvent.series_start_time, // if it's an occurrence
-      rawEvent: backendEvent
+        id: backendEvent.id.toString(), // Master ID
+        // Storing title, start, end here is a bit redundant if rawEvent has it all,
+        // but can be useful for quick access or if FullCalendar needs them directly on the event object for some features.
+        // For modal display, rawEvent will be the source of truth.
+        title: backendEvent.title,
+        start: backendEvent.is_occurrence ? backendEvent.occurrence_start_time : backendEvent.start_time,
+        end: backendEvent.is_occurrence ? backendEvent.occurrence_end_time : backendEvent.end_time,
+        rawEvent: backendEvent // This is the single source of truth for event data in the modal
     });
     setModalOpen(true);
   };
@@ -165,17 +159,36 @@ const EventCalendar = ({ events, onEventEdit, onEventDelete, onViewChange }) => 
         }}
       />
 
-      {modalOpen && selectedEvent && (
+      {modalOpen && selectedEvent && selectedEvent.rawEvent && (
         <div style={modalOverlayStyle} onClick={closeModal}>
           <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
-            <h3>{selectedEvent.title}</h3>
-            {selectedEvent.is_occurrence && selectedEvent.series_start_time && (
-                 <p><small>(Part of a series that started on: {new Date(selectedEvent.series_start_time).toLocaleDateString()})</small></p>
+            <h3>{selectedEvent.rawEvent.title}</h3>
+            {selectedEvent.rawEvent.is_occurrence && selectedEvent.rawEvent.series_start_time && (
+                 <p><small>(Part of a series that started on: {new Date(selectedEvent.rawEvent.series_start_time).toLocaleDateString()})</small></p>
             )}
-            <p><strong>Starts:</strong> {new Date(selectedEvent.start).toLocaleString()}</p>
-            <p><strong>Ends:</strong> {new Date(selectedEvent.end).toLocaleString()}</p>
-            <p><strong>Description:</strong> {selectedEvent.description || 'N/A'}</p>
-            {selectedEvent.colorTag && <p><strong>Tag:</strong> <span style={{color: selectedEvent.colorTag, fontWeight:'bold'}}>{selectedEvent.colorTag}</span></p>}
+            <p><strong>Starts:</strong> {new Date(selectedEvent.rawEvent.is_occurrence ? selectedEvent.rawEvent.occurrence_start_time : selectedEvent.rawEvent.start_time).toLocaleString()}</p>
+            <p><strong>Ends:</strong> {new Date(selectedEvent.rawEvent.is_occurrence ? selectedEvent.rawEvent.occurrence_end_time : selectedEvent.rawEvent.end_time).toLocaleString()}</p>
+
+            {selectedEvent.rawEvent.location && (
+              <p><strong>Location:</strong> {selectedEvent.rawEvent.location}</p>
+            )}
+
+            <p><strong>Description:</strong> {selectedEvent.rawEvent.description || 'N/A'}</p>
+
+            {selectedEvent.rawEvent.color_tag && (
+              <p><strong>Tag:</strong> <span style={{color: selectedEvent.rawEvent.color_tag, fontWeight:'bold'}}>{selectedEvent.rawEvent.color_tag}</span></p>
+            )}
+
+            {selectedEvent.rawEvent.recurrence_rule && (
+              <p><strong>Recurrence:</strong> {selectedEvent.rawEvent.recurrence_rule}</p>
+            )}
+
+            <div>
+              <strong>Reminder:</strong>
+              {selectedEvent.rawEvent.reminder_enabled ?
+                ` ${selectedEvent.rawEvent.reminder_value} ${selectedEvent.rawEvent.reminder_unit} before.` :
+                ' Off'}
+            </div>
 
             <hr style={{margin: "10px 0"}}/>
             <h4>Related Information</h4>

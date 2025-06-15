@@ -45,7 +45,7 @@ Check items off as they are completed:
 - [ ] **Learning from Past Schedules:**
     - [ ] Analyzes past schedule patterns to suggest automatic registration of routine work or recommend productive time slots (with privacy considerations).
 
-## YYYY-MM-DD: Screen Layouts Implemented
+## Recent Updates: Screen Layouts Implemented
 - Created core layout components: `Header`, `Sidebar`, `Footer`, and `MainLayout`.
 - Set up routing using `react-router-dom` to navigate between `DashboardPage`, `CalendarPage`, and `SettingsPage` within the main layout.
 - Login and Registration pages remain outside the main application layout.
@@ -59,12 +59,20 @@ Check items off as they are completed:
     - [x] Header: App name, user icon (link to profile), logout button. (Header component created, logout button temp placed)
     - [x] Sidebar: Mini calendar, tag list/filter, Gemini API input field (for natural language event addition or search). (Sidebar component created with nav links)
     - [x] Main Content Area: Monthly/weekly/daily calendar display, event listings. (MainLayout content area ready for pages)
-    - [ ] Add Event button.
-- [ ] **Add/Edit Event Modal/Screen:**
-    - [ ] Forms for title, date/time (start/end), location, detailed notes, recurrence settings, reminder settings, tag selection, color coding.
-    - [ ] Natural language input area (for Gemini API).
-- [ ] **Event Detail Modal/Screen:** Confirmation of registered content, edit/delete buttons. Area for Gemini API-provided related information.
-- [ ] **Settings Screen:** Profile settings, notification settings (email address, reminder timing), timezone, data linkage settings (for future expansion). (SettingsPage placeholder created)
+    - [x] Add Event button.
+        - (Button added to DashboardPage, which manages EventCalendar and the EventForm modal).
+- [x] **Add/Edit Event Modal/Screen:**
+    - [x] Forms for title, date/time (start/end), location, detailed notes, recurrence settings, reminder settings, tag selection (via color_tag field), color coding.
+        - (Enhanced EventForm.js to include Location and Reminder Settings. 'Tag selection' is handled by the existing 'color_tag' text field, suitable for comma-separated tags or Gemini auto-tags).
+    - [x] Natural language input area (for Gemini API).
+        - (Area added to EventForm.js; Gemini processing logic is currently mocked).
+- [x] **Event Detail Modal/Screen:**
+    - [x] Confirmation of registered content, edit/delete buttons.
+    - [x] Area for Gemini API-provided related information.
+        - (Enhanced the existing modal in EventCalendar.js to display full event details including location, recurrence, and reminders. Edit/Delete and Gemini-related info sections were already present).
+- [x] **Settings Screen:**
+    - [x] Profile settings (name, email - display only), notification settings (email - display only, default reminder timing - editable), timezone (editable). (Data linkage for future expansion remains pending).
+        - (Implemented in SettingsPage.js; fetching and saving of settings is currently mocked pending backend API development).
 ## Technology Stack Components
 
 - [ ] **Frontend:** Modern JavaScript framework (e.g., React, Vue.js, Angular).
