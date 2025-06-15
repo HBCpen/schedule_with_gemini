@@ -37,6 +37,11 @@ function Dashboard() {
     const [freeTimeSearchLoading, setFreeTimeSearchLoading] = useState(false);
     const [freeTimeSearchError, setFreeTimeSearchError] = useState('');
 
+    // State for Event Summary
+    const [eventSummary, setEventSummary] = useState('');
+    const [summaryLoading, setSummaryLoading] = useState(false);
+    const [summaryError, setSummaryError] = useState('');
+
     // Modified fetchEvents to accept date range for recurrence expansion
     const fetchEvents = useCallback(async (startDate, endDate) => {
         try {
@@ -108,6 +113,29 @@ function Dashboard() {
             fetchEvents(firstDayOfMonth, lastDayOfMonth);
         }
     }, [fetchEvents, currentCalendarView]);
+
+    // Fetch event summary
+    const fetchEventSummary = async (dateStr = null) => {
+        setSummaryLoading(true);
+        setSummaryError('');
+        try {
+            const response = await eventService.getEventSummary(dateStr);
+            setEventSummary(response.data.summary);
+        } catch (err) {
+            console.error("Fetch Event Summary error: ", err);
+            const errorMessage = err.response?.data?.msg || err.response?.data?.detail || 'Failed to fetch event summary.';
+            setSummaryError(errorMessage);
+            setEventSummary('');
+        } finally {
+            setSummaryLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        // Fetch summary for today on component mount
+        const todayStr = new Date().toISOString().split('T')[0];
+        fetchEventSummary(todayStr);
+    }, []); // Empty dependency array means this runs once on mount
 
 
     // Callback for EventCalendar to update current view range
@@ -342,12 +370,21 @@ function Dashboard() {
         }
     };
 
-    if (loading && !nlpLoading) return <p>Loading events...</p>; // Show event loading only if NLP is not also loading
-    if (error) return <p style={{color: 'red'}}>{error}</p>;
+    if (loading && !nlpLoading && !summaryLoading) return <p>Loading events...</p>; // Adjusted loading condition
+    if (error) return <p style={{color: 'red'}}>{error}</p>; // Main event loading error
 
     return (
         <div>
             <h2>My Schedule</h2>
+
+            {/* Event Summary Section */}
+            <div style={{ border: '1px solid #eee', padding: '15px', marginBottom: '20px', borderRadius: '5px', backgroundColor: '#f9f9f9' }}>
+                <h4>Today's Summary</h4>
+                {summaryLoading && <p>Loading summary...</p>}
+                {summaryError && <p style={{ color: 'red' }}>Error: {summaryError}</p>}
+                {eventSummary && !summaryLoading && !summaryError && <p>{eventSummary}</p>}
+                {!eventSummary && !summaryLoading && !summaryError && <p>No summary available for today.</p>}
+            </div>
 
             {/* Search Section */}
             <div style={{ border: '1px solid #ccc', padding: '15px', marginBottom: '20px', borderRadius: '5px' }}>

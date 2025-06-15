@@ -44,10 +44,14 @@ describe('Dashboard Functionality', () => {
         eventService.searchEvents.mockReset();
         eventService.createEvent.mockReset(); // For potential form submissions
         eventService.updateEvent.mockReset(); // For potential form submissions
+        eventService.getEventSummary.mockReset(); // Reset summary mock
         authService.getCurrentUserToken.mockReturnValue('fake-token'); // Assume user is logged in
 
         // Default mock for getEvents (called on initial load)
         eventService.getEvents.mockResolvedValue({ data: [...initialMockEvents] });
+        // Default mock for getEventSummary (called on initial load)
+        eventService.getEventSummary.mockResolvedValue({ data: { summary: "Default summary for today." } });
+
 
         // Reset the onViewChange callback store for EventCalendar mock
         mockSetViewChange.mockClear();
@@ -68,6 +72,62 @@ describe('Dashboard Functionality', () => {
         expect(screen.getByRole('button', { name: 'Clear Search' })).toBeInTheDocument();
     });
 
+    // --- Event Summary Tests ---
+    test('fetches and displays event summary on mount', async () => {
+        const mockSummary = "Today's key activities include important meetings.";
+        eventService.getEventSummary.mockResolvedValueOnce({ data: { summary: mockSummary } });
+        render(<Dashboard />);
+
+        // Wait for summary to be loaded and displayed
+        await waitFor(() => {
+            expect(screen.getByText(mockSummary)).toBeInTheDocument();
+        });
+        expect(eventService.getEventSummary).toHaveBeenCalledWith(new Date().toISOString().split('T')[0]);
+        expect(screen.queryByText('Loading summary...')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Error:/)).not.toBeInTheDocument();
+    });
+
+    test('displays loading message while fetching summary', async () => {
+        eventService.getEventSummary.mockImplementationOnce(() =>
+            new Promise(resolve => setTimeout(() => resolve({ data: { summary: "Late summary" } }), 100))
+        );
+        render(<Dashboard />);
+
+        // Check for loading message immediately
+        expect(screen.getByText('Loading summary...')).toBeInTheDocument();
+
+        // Wait for the summary to eventually load to ensure the loading message disappears
+        await waitFor(() => {
+            expect(screen.getByText("Late summary")).toBeInTheDocument();
+        }, { timeout: 500 }); // Increased timeout for safety with mock delay
+         expect(screen.queryByText('Loading summary...')).not.toBeInTheDocument();
+    });
+
+    test('displays error message if fetching summary fails', async () => {
+        const errorMessage = "Failed to retrieve summary.";
+        eventService.getEventSummary.mockRejectedValueOnce({ response: { data: { msg: errorMessage } } });
+        render(<Dashboard />);
+
+        await waitFor(() => {
+            expect(screen.getByText(`Error: ${errorMessage}`)).toBeInTheDocument();
+        });
+        expect(screen.queryByText('Loading summary...')).not.toBeInTheDocument();
+        expect(screen.queryByText("Default summary for today.")).not.toBeInTheDocument(); // Ensure no old summary is shown
+    });
+
+    test('displays "No summary available" message when summary is empty and no error/loading', async () => {
+        eventService.getEventSummary.mockResolvedValueOnce({ data: { summary: "" } }); // Empty summary
+        render(<Dashboard />);
+
+        await waitFor(() => {
+            expect(screen.getByText("No summary available for today.")).toBeInTheDocument();
+        });
+        expect(screen.queryByText('Loading summary...')).not.toBeInTheDocument();
+        expect(screen.queryByText(/Error:/)).not.toBeInTheDocument();
+    });
+
+
+    // --- Search Functionality Tests (Existing) ---
     test('allows typing into keyword and tags fields', async () => {
         render(<Dashboard />);
         await waitFor(() => expect(eventService.getEvents).toHaveBeenCalled());

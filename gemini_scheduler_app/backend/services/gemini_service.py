@@ -321,3 +321,63 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
         # print(f"Failed prompt: {prompt}") # Be careful logging sensitive info
         print(f"Failed raw response: {raw_response_text}")
         return {"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}
+
+
+def generate_event_summary_with_gemini(events_list_str: str, target_date_str: str = None):
+    """
+    Generates a concise, natural-language summary of events using the Gemini API.
+    Focuses on a target_date_str if provided.
+    """
+    model = get_gemini_model()
+    if not model:
+        return {"error": "Gemini API key not configured", "detail": "GEMINI_API_KEY is missing or invalid in environment variables.", "status_code": 500}
+
+    try:
+        # Validate events_list_str
+        if not events_list_str or events_list_str.strip() == "[]":
+            return {"error": "No events provided for summary.", "detail": "The events list string is empty or contains no events.", "status_code": 400}
+
+        # Basic validation that events_list_str is a valid JSON string representing a list
+        try:
+            events_test = json.loads(events_list_str)
+            if not isinstance(events_test, list):
+                raise ValueError("events_list_str is not a JSON list")
+        except json.JSONDecodeError:
+            return {"error": "Invalid JSON format for events_list_str.", "detail": "The provided events string is not valid JSON.", "status_code": 400}
+        except ValueError: # Catches the custom ValueError from above
+             return {"error": "Invalid data type for events_list_str.", "detail": "The provided events string is not a JSON list.", "status_code": 400}
+
+
+        if target_date_str:
+            prompt = f"Summarize these events for {target_date_str}. What are the key activities? Keep the summary concise and in natural language.\nEvents:\n{events_list_str}"
+        else:
+            prompt = f"Summarize these events. What are the key activities? Keep the summary concise and in natural language.\nEvents:\n{events_list_str}"
+
+        # print(f"DEBUG: Sending summary prompt to Gemini: {prompt}")
+        response = model.generate_content(prompt)
+
+        if response and hasattr(response, 'text') and response.text:
+            return response.text.strip()
+        elif response and hasattr(response, 'parts') and response.parts:
+             # Handle cases where response.text might be empty but parts exist
+            all_text_parts = "".join([part.text for part in response.parts if hasattr(part, 'text')])
+            if all_text_parts:
+                return all_text_parts.strip()
+            else: # If no text in parts either
+                # print(f"Warning: Gemini response for summary was empty or had no text content. Prompt: {prompt}")
+                return {"error": "Gemini API returned an empty response", "detail": "The API generated no text content for the summary.", "status_code": 500}
+        else:
+            # print(f"Warning: Gemini response for summary was empty or malformed. Prompt: {prompt}")
+            return {"error": "Gemini API returned an unexpected response structure", "detail": "The API response did not contain the expected text data.", "status_code": 500}
+
+    except Exception as e:
+        # print(f"Error calling Gemini API for summary: {e}")
+        # print(f"Failed prompt for summary: {prompt}") # Be careful with sensitive data in logs
+        raw_response_text = getattr(e, 'response', {}).get('text', 'No direct response text in exception.')
+        # It's also good to check if the exception itself has useful details if it's a google.api_core.exceptions type
+        # For example, e.message or str(e) might be more informative for API errors.
+        error_detail = str(e)
+        if hasattr(e, 'message'): # some google exceptions have a message attribute
+            error_detail = e.message
+
+        return {"error": "Gemini API error during summary generation", "detail": error_detail, "raw_response": raw_response_text, "status_code": 500}

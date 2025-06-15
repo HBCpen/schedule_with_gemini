@@ -17,10 +17,10 @@ Check items off as they are completed:
     - [x] Example: "Meeting with Mr. A in Shibuya tomorrow at 14:00, also set a reminder for document preparation."
     - [x] Gemini API interprets and suggests entries for date, time, location, attendees, content, and reminders.
     - [ ] Users confirm/modify suggestions before saving.
-- [ ] **Event Display:**
-    - [ ] Calendar formats (monthly, weekly, daily).
-    - [ ] List format.
-    - [ ] Gemini API-powered summary (e.g., "You have 3 important events today: a morning meeting, an afternoon client visit, and an evening deadline for document submission.").
+- [x] **Event Display:**
+    - [x] Calendar formats (monthly, weekly, daily).
+    - [x] List format.
+    - [x] Gemini API-powered summary (e.g., "You have 3 important events today: a morning meeting, an afternoon client visit, and an evening deadline for document submission.").
 - [x] **Edit/Delete:** Intuitive modification and deletion of events. (Marking as complete as it's a basic CRUD op typically done with event creation)
 - [x] **Recurring Events:** Settings for daily, weekly, monthly, yearly repetitions. (Implemented daily/weekly UI, backend supports full RRULE)
 - [x] **Search:** Keyword, period, and tag-based event search.

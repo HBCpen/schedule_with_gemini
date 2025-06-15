@@ -36,6 +36,224 @@ def test_find_free_time_successful_response(monkeypatch):
     assert result == expected_slots
     mock_get_gemini_model.assert_called_once()
     mock_model_instance.generate_content.assert_called_once()
+
+# Import the function to be tested
+from services.gemini_service import generate_event_summary_with_gemini
+import os # For mocking environment variables
+
+class TestGenerateEventSummary:
+
+    EVENTS_JSON_VALID = json.dumps([
+        {"title": "Team Meeting", "start_time": "10:00", "end_time": "11:00", "description": "Discuss project updates"},
+        {"title": "Lunch with Client", "start_time": "13:00", "end_time": "14:00", "description": "Follow up on proposal"}
+    ])
+    TARGET_DATE = "2024-07-28"
+    EXPECTED_SUMMARY_TEXT = "This is a mock summary of events."
+
+    def mock_gemini_model_summary(self, monkeypatch, response_text=None, response_parts=None, side_effect=None):
+        """Helper to mock the Gemini model for summary generation."""
+        mock_model_instance = MagicMock()
+
+        if side_effect:
+            mock_model_instance.generate_content.side_effect = side_effect
+        else:
+            mock_gemini_response = MagicMock()
+            if response_text is not None:
+                mock_gemini_response.text = response_text
+                # Ensure parts is None or an empty list if text is primary
+                mock_gemini_response.parts = []
+            elif response_parts is not None:
+                # Simulate response where text is empty but parts are populated
+                mock_gemini_response.text = ""
+                mock_gemini_response.parts = [MagicMock(text=part_text) for part_text in response_parts]
+            else: # Default empty response
+                mock_gemini_response.text = ""
+                mock_gemini_response.parts = []
+
+            mock_model_instance.generate_content.return_value = mock_gemini_response
+
+        mock_get_model = MagicMock(return_value=mock_model_instance)
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+        return mock_get_model, mock_model_instance
+
+    def test_successful_summary_generation_with_date(self, monkeypatch):
+        """Test successful summary generation when a target date is provided."""
+        _, mock_model_instance = self.mock_gemini_model_summary(monkeypatch, response_text=self.EXPECTED_SUMMARY_TEXT)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID, self.TARGET_DATE)
+
+        assert result == self.EXPECTED_SUMMARY_TEXT
+        mock_model_instance.generate_content.assert_called_once()
+        prompt = mock_model_instance.generate_content.call_args[0][0]
+        assert f"Summarize these events for {self.TARGET_DATE}" in prompt
+        assert self.EVENTS_JSON_VALID in prompt
+
+    def test_successful_summary_generation_without_date(self, monkeypatch):
+        """Test successful summary generation when no target date is provided."""
+        _, mock_model_instance = self.mock_gemini_model_summary(monkeypatch, response_text=self.EXPECTED_SUMMARY_TEXT)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert result == self.EXPECTED_SUMMARY_TEXT
+        mock_model_instance.generate_content.assert_called_once()
+        prompt = mock_model_instance.generate_content.call_args[0][0]
+        assert "Summarize these events." in prompt
+        assert f"for {self.TARGET_DATE}" not in prompt # Ensure date-specific part is missing
+        assert self.EVENTS_JSON_VALID in prompt
+
+    def test_successful_summary_generation_with_response_parts(self, monkeypatch):
+        """Test successful summary when response is in 'parts' attribute."""
+        part1 = "This is part 1. "
+        part2 = "This is part 2."
+        expected_summary_from_parts = part1 + part2
+        _, mock_model_instance = self.mock_gemini_model_summary(monkeypatch, response_parts=[part1, part2])
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID, self.TARGET_DATE)
+
+        assert result == expected_summary_from_parts
+        mock_model_instance.generate_content.assert_called_once()
+
+
+    def test_api_key_not_configured_env_none(self, monkeypatch):
+        """Test when GEMINI_API_KEY is None."""
+        # Mock get_gemini_model to return None, which is the behavior when API key is bad
+        mock_get_model = MagicMock(return_value=None)
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API key not configured"
+        assert "GEMINI_API_KEY is missing or invalid" in result["detail"]
+        assert result.get("status_code") == 500
+        mock_get_model.assert_called_once() # Ensures get_gemini_model was called
+
+    def test_api_key_not_configured_env_placeholder(self, monkeypatch):
+        """Test when GEMINI_API_KEY is the placeholder value."""
+        # This test relies on the internal logic of get_gemini_model() correctly
+        # identifying "YOUR_API_KEY_HERE" as an invalid key and returning None.
+        # We achieve this by mocking os.environ.get directly for this test.
+        monkeypatch.setattr('os.environ.get', lambda key, default=None: "YOUR_API_KEY_HERE" if key == 'GEMINI_API_KEY' else default)
+
+        # We also need to ensure that genai.configure is not called with the placeholder,
+        # or if it is, that it results in get_gemini_model returning None.
+        # The current get_gemini_model returns None if api_key is "YOUR_API_KEY_HERE".
+
+        # Temporarily allow genai.configure to be called, but it shouldn't matter if get_gemini_model returns None first.
+        mock_genai_configure = MagicMock()
+        monkeypatch.setattr('google.generativeai.configure', mock_genai_configure, raising=False)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API key not configured"
+        assert "GEMINI_API_KEY is missing or invalid" in result["detail"]
+        assert result.get("status_code") == 500
+        # mock_genai_configure.assert_not_called() # genai.configure should not be called if key is placeholder
+
+    def test_gemini_api_call_failure(self, monkeypatch):
+        """Test when the call to model.generate_content() raises an exception."""
+        error_message = "Network connection failed"
+        _, mock_model_instance = self.mock_gemini_model_summary(monkeypatch, side_effect=Exception(error_message))
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API error during summary generation"
+        assert result["detail"] == error_message
+        assert result.get("status_code") == 500
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_empty_event_list_string(self, monkeypatch):
+        """Test with an empty event list string '[]'."""
+        # No need to mock gemini model as this should be caught before API call
+        mock_get_model, _ = self.mock_gemini_model_summary(monkeypatch)
+
+        result = generate_event_summary_with_gemini("[]")
+
+        assert isinstance(result, dict)
+        assert result["error"] == "No events provided for summary."
+        assert result.get("status_code") == 400
+        mock_get_model.assert_called_once() # get_gemini_model is called
+
+    def test_null_event_list_string(self, monkeypatch):
+        """Test with a None event list string."""
+        mock_get_model, _ = self.mock_gemini_model_summary(monkeypatch)
+        result = generate_event_summary_with_gemini(None)
+        assert isinstance(result, dict)
+        assert result["error"] == "No events provided for summary."
+        assert result.get("status_code") == 400
+        mock_get_model.assert_called_once()
+
+
+    def test_invalid_json_event_list_string(self, monkeypatch):
+        """Test with an invalid JSON string for events."""
+        mock_get_model, _ = self.mock_gemini_model_summary(monkeypatch)
+        result = generate_event_summary_with_gemini("this is not json")
+        assert isinstance(result, dict)
+        assert result["error"] == "Invalid JSON format for events_list_str."
+        assert result.get("status_code") == 400
+        mock_get_model.assert_called_once()
+
+    def test_json_object_not_list_event_string(self, monkeypatch):
+        """Test with a JSON string that is an object, not a list."""
+        mock_get_model, _ = self.mock_gemini_model_summary(monkeypatch)
+        result = generate_event_summary_with_gemini(json.dumps({"event": "some event"}))
+        assert isinstance(result, dict)
+        assert result["error"] == "Invalid data type for events_list_str."
+        assert result.get("status_code") == 400
+        mock_get_model.assert_called_once()
+
+    def test_gemini_returns_empty_response_text_and_parts(self, monkeypatch):
+        """Test when Gemini returns a response with no text and no parts."""
+        _, mock_model_instance = self.mock_gemini_model_summary(monkeypatch, response_text="", response_parts=[])
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API returned an empty response"
+        assert result.get("status_code") == 500
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_gemini_returns_none_response(self, monkeypatch):
+        """Test when Gemini returns None as a response (highly unlikely but good to cover)."""
+        mock_model_instance = MagicMock()
+        mock_model_instance.generate_content.return_value = None # Simulate Gemini returning None
+        mock_get_model = MagicMock(return_value=mock_model_instance)
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API returned an unexpected response structure"
+        assert result.get("status_code") == 500
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_gemini_response_object_without_text_or_parts_attributes(self, monkeypatch):
+        """Test response object missing 'text' and 'parts' attributes."""
+        mock_response = MagicMock()
+        # Remove 'text' and 'parts' if they exist by default on MagicMock or set to None
+        del mock_response.text
+        del mock_response.parts
+        # Or more robustly:
+        # mock_response.configure_mock(**{'text': None, 'parts': None})
+        # If MagicMock doesn't have them by default, this is fine.
+        # Let's ensure they are not there:
+        if hasattr(mock_response, 'text'): delattr(mock_response, 'text')
+        if hasattr(mock_response, 'parts'): delattr(mock_response, 'parts')
+
+
+        mock_model_instance = MagicMock()
+        mock_model_instance.generate_content.return_value = mock_response
+        mock_get_model = MagicMock(return_value=mock_model_instance)
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+
+        result = generate_event_summary_with_gemini(self.EVENTS_JSON_VALID)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API returned an unexpected response structure"
+        assert result.get("status_code") == 500
+        mock_model_instance.generate_content.assert_called_once()
     # Check that today's date was included in the prompt
     called_prompt = mock_model_instance.generate_content.call_args[0][0]
     assert datetime.now().strftime('%Y-%m-%d') in called_prompt
