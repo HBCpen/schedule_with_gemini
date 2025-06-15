@@ -72,6 +72,18 @@ const eventService = {
             requestBody.end_date = endDate;
         }
         return axios.post(`${API_URL}/find-free-time`, requestBody, { headers: getAuthHeaders() });
+    },
+
+    // New function for getting event summary
+    getEventSummary: (date = null) => {
+        const params = {};
+        if (date) {
+            params.date = date;
+        }
+        return axios.get(`${API_URL}/summary`, {
+            headers: getAuthHeaders(),
+            params: params
+        });
     }
 };
 export default eventService;

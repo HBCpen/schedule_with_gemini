@@ -364,3 +364,85 @@ def search_events_api():
         # Log the exception for debugging
         print(f"Error during event search: {e}")
         return jsonify({"msg": "An error occurred during the search."}), 500
+
+
+@event_bp.route('/summary', methods=['GET'])
+@jwt_required()
+def get_event_summary():
+    current_user_id = get_jwt_identity()
+    target_date_str = None
+    date_param = request.args.get('date')
+
+    if date_param:
+        try:
+            target_date_str = datetime.strptime(date_param, '%Y-%m-%d').strftime('%Y-%m-%d')
+        except ValueError:
+            return jsonify({"msg": "Invalid date format. Use YYYY-MM-DD"}), 400
+    else:
+        target_date_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    # Fetch events for the target date
+    service_response = event_service.get_events_in_range(
+        user_id=current_user_id,
+        start_date_str=target_date_str,
+        end_date_str=target_date_str
+    )
+
+    if isinstance(service_response, dict) and 'error' in service_response:
+        return jsonify({"msg": service_response["error"]}), service_response.get('status_code', 400)
+
+    events = service_response
+    if not events:
+        return jsonify({"summary": "No events scheduled for this date."}), 200
+
+    # Prepare a simplified list of event details for Gemini
+    simple_events = []
+    for ev in events: # Assuming events is a list of event objects or dictionaries
+        # Adapt access to event attributes based on their actual structure
+        # If ev is a SQLAlchemy model instance (e.g. from Event.query.all()):
+        if isinstance(ev, Event):
+            simple_events.append({
+                "title": ev.title,
+                "start_time": ev.start_time.strftime('%H:%M') if ev.start_time else None, # Format time
+                "end_time": ev.end_time.strftime('%H:%M') if ev.end_time else None, # Format time
+                "description": ev.description
+            })
+        # If ev is a dictionary (e.g. from event.to_dict() or from service_response directly)
+        elif isinstance(ev, dict):
+             # Ensure time strings are handled correctly; if they are full ISO strings, parse and format
+            start_time_obj = parse_datetime(ev.get('start_time'))
+            end_time_obj = parse_datetime(ev.get('end_time'))
+            simple_events.append({
+                "title": ev.get('title'),
+                "start_time": start_time_obj.strftime('%H:%M') if start_time_obj else None,
+                "end_time": end_time_obj.strftime('%H:%M') if end_time_obj else None,
+                "description": ev.get('description')
+            })
+        else:
+            # Log or handle unexpected event structure
+            print(f"Warning: Unexpected event data structure: {type(ev)}")
+            continue # Skip this event or handle as appropriate
+
+
+    if not simple_events: # Could happen if original events had unexpected structure
+        return jsonify({"summary": "No valid event data to summarize for this date."}), 200
+
+
+    try:
+        events_json_str = json.dumps(simple_events)
+    except TypeError as e:
+        print(f"Error serializing events to JSON: {e}")
+        return jsonify({"msg": "Error preparing event data for summary"}), 500
+
+    summary_result = gemini_service.generate_event_summary_with_gemini(
+        events_json_str,
+        target_date_str=target_date_str
+    )
+
+    if isinstance(summary_result, dict) and 'error' in summary_result:
+        return jsonify({
+            "msg": summary_result["error"],
+            "detail": summary_result.get("detail")
+        }), summary_result.get('status_code', 500)
+
+    return jsonify({"summary": summary_result}), 200

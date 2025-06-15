@@ -1257,3 +1257,115 @@ def test_get_related_info_service_generic_error(mock_get_related_info, client, i
     assert "Failed to retrieve related information due to a server error" in response.json['msg']
     assert "Details of the issue" in response.json['detail']
     mock_get_related_info.assert_called_once()
+
+
+# --- Event Summary API Tests ---
+
+@patch('api.event.event_service.get_events_in_range')
+@patch('api.event.gemini_service.generate_event_summary_with_gemini')
+def test_get_event_summary_success_default_date(mock_generate_summary, mock_get_events, client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_default@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    # Mock event_service response
+    mock_event_data = [{"id": 1, "title": "Event 1", "start_time": f"{today_str}T10:00:00", "end_time": f"{today_str}T11:00:00", "description": "Desc 1"}]
+    mock_get_events.return_value = mock_event_data
+
+    # Mock gemini_service response
+    mocked_summary_text = "Summary for today's events."
+    mock_generate_summary.return_value = mocked_summary_text
+
+    response = client.get('/api/events/summary', headers=headers)
+
+    assert response.status_code == 200
+    assert response.json == {"summary": mocked_summary_text}
+    mock_get_events.assert_called_once_with(user_id=1, start_date_str=today_str, end_date_str=today_str) # Assuming user_id 1 from token mock
+
+    simplified_events_for_gemini = [{"title": "Event 1", "start_time": "10:00", "end_time": "11:00", "description": "Desc 1"}]
+    mock_generate_summary.assert_called_once_with(json.dumps(simplified_events_for_gemini), target_date_str=today_str)
+
+@patch('api.event.event_service.get_events_in_range')
+@patch('api.event.gemini_service.generate_event_summary_with_gemini')
+def test_get_event_summary_success_specific_date(mock_generate_summary, mock_get_events, client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_specific@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    target_date_str = "2024-05-15"
+
+    mock_event_data = [{"id": 1, "title": "Event May15", "start_time": f"{target_date_str}T14:00:00", "end_time": f"{target_date_str}T15:00:00", "description": "May 15 event"}]
+    mock_get_events.return_value = mock_event_data
+    mocked_summary_text = "Summary for May 15."
+    mock_generate_summary.return_value = mocked_summary_text
+
+    response = client.get(f'/api/events/summary?date={target_date_str}', headers=headers)
+
+    assert response.status_code == 200
+    assert response.json == {"summary": mocked_summary_text}
+    mock_get_events.assert_called_once_with(user_id=1, start_date_str=target_date_str, end_date_str=target_date_str)
+    simplified_events_for_gemini = [{"title": "Event May15", "start_time": "14:00", "end_time": "15:00", "description": "May 15 event"}]
+    mock_generate_summary.assert_called_once_with(json.dumps(simplified_events_for_gemini), target_date_str=target_date_str)
+
+def test_get_event_summary_invalid_date_format(client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_baddate@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    response = client.get('/api/events/summary?date=invalid-date', headers=headers)
+    assert response.status_code == 400
+    assert response.json == {"msg": "Invalid date format. Use YYYY-MM-DD"}
+
+@patch('api.event.event_service.get_events_in_range')
+@patch('api.event.gemini_service.generate_event_summary_with_gemini')
+def test_get_event_summary_no_events_found(mock_generate_summary, mock_get_events, client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_noevents@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    mock_get_events.return_value = [] # No events
+
+    response = client.get('/api/events/summary', headers=headers)
+
+    assert response.status_code == 200
+    assert response.json == {"summary": "No events scheduled for this date."}
+    mock_get_events.assert_called_once_with(user_id=1, start_date_str=today_str, end_date_str=today_str)
+    mock_generate_summary.assert_not_called()
+
+@patch('api.event.event_service.get_events_in_range')
+@patch('api.event.gemini_service.generate_event_summary_with_gemini')
+def test_get_event_summary_event_service_error(mock_generate_summary, mock_get_events, client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_eventerror@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    mock_get_events.return_value = {"error": "Database connection failed", "status_code": 500}
+
+    response = client.get('/api/events/summary', headers=headers)
+
+    assert response.status_code == 500
+    assert response.json == {"msg": "Database connection failed"}
+    mock_get_events.assert_called_once_with(user_id=1, start_date_str=today_str, end_date_str=today_str)
+    mock_generate_summary.assert_not_called()
+
+@patch('api.event.event_service.get_events_in_range')
+@patch('api.event.gemini_service.generate_event_summary_with_gemini')
+def test_get_event_summary_gemini_service_error(mock_generate_summary, mock_get_events, client, init_database):
+    token = get_auth_token(client, init_database, email='summaryuser_geminierror@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    today_str = datetime.utcnow().strftime('%Y-%m-%d')
+
+    mock_event_data = [{"id": 1, "title": "Event For Gemini Error", "start_time": f"{today_str}T10:00:00", "end_time": f"{today_str}T11:00:00", "description": "Desc"}]
+    mock_get_events.return_value = mock_event_data
+
+    gemini_error_response = {"error": "Gemini API is down", "detail": "Service unavailable", "status_code": 503}
+    mock_generate_summary.return_value = gemini_error_response
+
+    response = client.get('/api/events/summary', headers=headers)
+
+    assert response.status_code == 503
+    assert response.json == {"msg": "Gemini API is down", "detail": "Service unavailable"}
+    mock_get_events.assert_called_once_with(user_id=1, start_date_str=today_str, end_date_str=today_str)
+    simplified_events_for_gemini = [{"title": "Event For Gemini Error", "start_time": "10:00", "end_time": "11:00", "description": "Desc"}]
+    mock_generate_summary.assert_called_once_with(json.dumps(simplified_events_for_gemini), target_date_str=today_str)
+
+def test_get_event_summary_unauthorized(client, init_database):
+    # No token provided
+    response = client.get('/api/events/summary')
+    assert response.status_code == 401 # Expecting JWT Unauthorized
