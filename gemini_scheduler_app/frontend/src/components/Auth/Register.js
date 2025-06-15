@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import authService from '../../services/authService';
 
-function Register() {
+function Register({ onRegisterSuccess }) { // Added onRegisterSuccess prop
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [message, setMessage] = useState('');
@@ -12,7 +12,10 @@ function Register() {
         try {
             const response = await authService.register(email, password);
             setMessage(response.data.msg || 'Registration successful!');
-            // Optionally redirect to login or auto-login
+            if (onRegisterSuccess) { // Call the callback
+                onRegisterSuccess();
+            }
+            // No fallback to window.location.reload() here, as navigation is preferred.
         } catch (error) {
             const resMessage =
                 (error.response && error.response.data && error.response.data.msg) ||
