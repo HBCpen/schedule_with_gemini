@@ -108,3 +108,33 @@ Check items off as they are completed:
 - [ ] **Performance:** Optimize database design and queries for smooth operation even with large amounts of schedule data.
 - [ ] **UI/UX Design:** Aim for an intuitive and easy-to-use interface. Design Gemini API-integrated features for natural usability.
 - [ ] **Testing:** Conduct unit tests, integration tests, and E2E tests appropriately to ensure quality.
+
+## Unit Test Coverage
+
+This section documents the implemented unit tests for backend services.
+
+-   **`gemini_scheduler_app/backend/services/event_service.py`**
+    -   **File:** `gemini_scheduler_app/backend/tests/test_event_service.py`
+    -   **Scope:** Covers all CRUD (Create, Retrieve, Update, Delete) operations for events. Includes tests for successful operations, handling of non-existent events (e.g., event not found for update/delete), and ensuring database interactions (add, commit, refresh, delete) are correctly called or skipped based on the scenario. Utilizes `unittest.mock.MagicMock` for database session simulation.
+
+-   **`gemini_scheduler_app/backend/services/reminder_service.py`**
+    -   **File:** `gemini_scheduler_app/backend/tests/test_reminder_service.py`
+    -   **Scope:** Tests the `send_event_reminders` function. Covers scenarios such as:
+        -   Events found within the reminder window and reminders successfully simulated.
+        -   No events found needing reminders.
+        -   Events outside the reminder window (too early or too late).
+        -   Events that already had a reminder sent.
+        -   Error handling during the simulation of sending one email (ensuring other reminders are still processed).
+    -   Mocks dependencies like Flask app context, database queries, email message construction (`flask_mail.Message`), and `datetime.utcnow()`.
+
+-   **`gemini_scheduler_app/backend/services/gemini_service.py`**
+    -   **File:** `gemini_scheduler_app/backend/tests/test_gemini_service.py`
+    -   **Scope:** Provides comprehensive test coverage for all major functions interacting with the Gemini API.
+        -   **`get_gemini_model()`**: Tests successful model retrieval, handling of missing/placeholder API keys, and errors during Gemini library configuration or model instantiation.
+        -   **`parse_event_text_with_gemini()`**: Tests natural language event parsing, including successful parsing, markdown stripping from Gemini's JSON response, API key/model errors, API call failures, malformed JSON responses, and dynamic date interpretation in prompts.
+        -   **`find_free_time_slots_with_gemini()`**: Tests free time slot suggestions, covering successful responses, API key/model errors, API call failures, malformed JSON, markdown stripping, and handling of empty/no-slot responses. Prompt content verification for dates and user inputs included.
+        -   **`suggest_tags_for_event()`**: Tests event tagging functionality, including successful tagging, error handling (API errors, invalid JSON, model unavailability leading to default tags), markdown stripping, and various response formats from Gemini.
+        -   **`suggest_subtasks_for_event()`**: Tests subtask suggestions, covering successful generation (with/without event description), API/model errors, JSON errors, markdown stripping, and validation of response structure (list of strings).
+        -   **`get_related_information_for_event()`**: Tests retrieval of related event information (weather, traffic, suggestions), focusing on correct prompt construction based on event details (e.g., presence of meal-related keywords for restaurant suggestions, inclusion of title/description for news/document fetching), handling of API/model errors, JSON errors, invalid date inputs, and malformed/empty responses from Gemini.
+        -   **`generate_event_summary_with_gemini()`**: Tests event summary generation, including valid inputs (with/without target date), API key/model errors, API call failures, invalid input JSON for events list, and various Gemini response formats (e.g., text in `parts`, empty/None responses).
+    -   Extensive use of `unittest.mock.patch` and `pytest` fixtures (like `monkeypatch`) to mock external dependencies (Gemini API, `os.environ`, `datetime`). Test classes are used for better organization.
