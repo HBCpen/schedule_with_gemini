@@ -336,6 +336,39 @@ def get_event_related_information(event_id):
     return jsonify(related_info), 200
 
 
+@event_bp.route('/<int:event_id>/suggest-subtasks', methods=['POST'])
+@jwt_required()
+def suggest_event_subtasks(event_id):
+    current_user_id = get_jwt_identity()
+    event = Event.query.filter_by(id=event_id, user_id=current_user_id).first()
+
+    if not event:
+        return jsonify({"msg": "Event not found or access denied"}), 404
+
+    gemini_api_key = os.environ.get('GEMINI_API_KEY')
+    if not gemini_api_key or gemini_api_key == "YOUR_API_KEY_HERE":
+        return jsonify({"msg": "Task suggestion service is currently unavailable."}), 503 # Service Unavailable
+
+    # Call the service function
+    response = gemini_service.suggest_subtasks_for_event(
+        event_title=event.title,
+        event_description=event.description
+    )
+
+    if isinstance(response, dict) and "error" in response:
+        error_msg = response.get("error")
+        error_detail = response.get("detail")
+        if "Gemini API not configured" in error_msg:
+            # Specific error for API key/configuration issues
+            return jsonify({"msg": "Task suggestion service is currently unavailable.", "detail": error_detail}), 503
+        else:
+            # Generic error for other issues from the Gemini service
+            return jsonify({"msg": "Error suggesting subtasks", "detail": error_detail, "raw_response": response.get("raw_response")}), 500
+
+    # If response is a list (success case)
+    return jsonify(response), 200
+
+
 @event_bp.route('/search', methods=['GET'])
 @jwt_required()
 def search_events_api():

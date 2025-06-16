@@ -24,7 +24,7 @@ This document outlines the necessary tasks to finalize the service.
         - [x] Automatic Tagging/Classification
         - [x] Free Time Search/Suggestions
         - [x] Related Information Display
-        - [ ] Task Suggestions/Decomposition (Not Started)
+        - [x] Task Suggestions/Decomposition
         - [ ] Learning from Past Schedules (Not Started)
     - [x] Search Function
     - [x] Recurring Event Backend Support

@@ -226,6 +226,71 @@ Provide only the JSON array in your response, without any surrounding text or ma
         return ["general"] # Fallback for other API errors
 
 
+def suggest_subtasks_for_event(event_title: str, event_description: str = None):
+    """
+    Suggests 3-5 actionable subtasks for a given event using the Gemini API.
+    """
+    model = get_gemini_model()
+    if not model:
+        return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
+
+    prompt_lines = [
+        "Given the following event:",
+        f"Title: {event_title}"
+    ]
+    if event_description:
+        prompt_lines.append(f"Description: {event_description}")
+
+    prompt_lines.extend([
+        "Please suggest 3 to 5 actionable subtasks or steps to prepare for or complete this event.",
+        "Return your suggestions as a JSON formatted list of strings, like:",
+        '["Subtask 1", "Subtask 2", "Subtask 3"]',
+        "Provide only the JSON array in your response, without any surrounding text or markdown."
+    ])
+    prompt = "\n".join(prompt_lines)
+
+    try:
+        # print(f"DEBUG: Sending subtask suggestion prompt to Gemini: {prompt}")
+        response = model.generate_content(prompt)
+        # print(f"DEBUG: Raw Gemini Response for subtasks: {response.text}")
+
+        raw_response_text = response.text if hasattr(response, 'text') else ''
+        cleaned_response = raw_response_text.strip()
+
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:] # Remove ```json\n
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3] # Remove ```
+        elif cleaned_response.startswith("```"):
+             cleaned_response = cleaned_response[3:] # Remove ```
+             if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3] # Remove ```
+
+        cleaned_response = cleaned_response.strip() # Ensure no leading/trailing whitespace after markdown removal
+
+        if not cleaned_response:
+            # print("Warning: Received empty response from Gemini for subtask suggestion.")
+            return []
+
+        subtasks = json.loads(cleaned_response)
+        if isinstance(subtasks, list) and all(isinstance(task, str) for task in subtasks):
+            return subtasks
+        else:
+            # print(f"Warning: Gemini response for subtasks was not a list of strings: {subtasks}")
+            # Consider returning an error or trying to salvage, for now, error out
+            return {"error": "Gemini API response format error", "detail": "Response was not a list of strings.", "raw_response": raw_response_text}
+
+    except json.JSONDecodeError as e:
+        # print(f"Error decoding JSON from Gemini for subtask suggestion: {e}")
+        # print(f"Failed raw response for subtasks: {raw_response_text}")
+        return {"error": "Invalid JSON response from Gemini", "detail": str(e), "raw_response": raw_response_text}
+    except Exception as e:
+        # print(f"Error calling Gemini API or processing response for subtask suggestion: {e}")
+        # print(f"Failed prompt for subtasks: {prompt}")
+        # print(f"Failed raw response for subtasks: {raw_response_text}")
+        return {"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text if 'raw_response_text' in locals() else 'No response text available'}
+
+
 def get_related_information_for_event(event_location: str, event_start_datetime_iso: str, event_title: str = None, event_description: str = None):
     """
     Retrieves weather, traffic, and optionally restaurant suggestions for a given event.
