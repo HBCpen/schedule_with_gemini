@@ -6,40 +6,371 @@ from datetime import datetime
 
 # Adjust import path as per your project structure
 # Assuming tests are run from the 'backend' directory or PYTHONPATH is set up accordingly
-from services.gemini_service import find_free_time_slots_with_gemini
-
-# Test cases for find_free_time_slots_with_gemini
-
-def test_find_free_time_successful_response(monkeypatch):
-    """
-    Tests successful retrieval and parsing of free time slots from Gemini.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    expected_slots = [
-        {"start_time": "2024-08-01T10:00:00", "end_time": "2024-08-01T11:00:00"},
-        {"start_time": "2024-08-01T14:00:00", "end_time": "2024-08-01T15:00:00"}
-    ]
-    mock_gemini_response.text = json.dumps(expected_slots)
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    user_query = "Find a 1-hour slot tomorrow morning"
-    events_json = json.dumps([
-        {"title": "Existing Meeting", "start_time": "2024-08-01T09:00:00", "end_time": "2024-08-01T09:30:00"}
-    ])
-
-    result = find_free_time_slots_with_gemini(user_query, events_json)
-
-    assert result == expected_slots
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
+# find_free_time_slots_with_gemini is imported later for its test class
 
 # Import the function to be tested
-from services.gemini_service import generate_event_summary_with_gemini
+from services.gemini_service import get_gemini_model # Added for testing get_gemini_model
+import services.gemini_service as gemini_service_module # To mock genai within the module
+import google.generativeai # To mock genai.configure and genai.GenerativeModel
 import os # For mocking environment variables
+
+class TestGetGeminiModel:
+    def test_get_gemini_model_success(self, monkeypatch):
+        """Test successful model retrieval when API key is valid."""
+        mock_env_get = MagicMock(return_value="VALID_API_KEY")
+        monkeypatch.setattr(os, 'environ', {'get': mock_env_get})
+
+        mock_genai_configure = MagicMock()
+        monkeypatch.setattr(google.generativeai, 'configure', mock_genai_configure)
+
+        mock_generative_model_instance = MagicMock()
+        mock_genai_generative_model = MagicMock(return_value=mock_generative_model_instance)
+        monkeypatch.setattr(google.generativeai, 'GenerativeModel', mock_genai_generative_model)
+
+        model = get_gemini_model()
+
+        assert model == mock_generative_model_instance
+        mock_env_get.assert_called_once_with('GEMINI_API_KEY')
+        mock_genai_configure.assert_called_once_with(api_key="VALID_API_KEY")
+        mock_genai_generative_model.assert_called_once_with('gemini-pro')
+
+    def test_get_gemini_model_no_api_key(self, monkeypatch):
+        """Test model retrieval fails when API key is missing."""
+        mock_env_get = MagicMock(return_value=None)
+        monkeypatch.setattr(os, 'environ', {'get': mock_env_get})
+
+        model = get_gemini_model()
+
+        assert model is None
+        mock_env_get.assert_called_once_with('GEMINI_API_KEY')
+
+    def test_get_gemini_model_placeholder_api_key(self, monkeypatch):
+        """Test model retrieval fails when API key is the placeholder."""
+        mock_env_get = MagicMock(return_value="YOUR_API_KEY_HERE")
+        monkeypatch.setattr(os, 'environ', {'get': mock_env_get})
+
+        model = get_gemini_model()
+
+        assert model is None
+        mock_env_get.assert_called_once_with('GEMINI_API_KEY')
+
+    def test_get_gemini_model_configure_fails(self, monkeypatch):
+        """Test model retrieval fails if genai.configure raises an exception."""
+        mock_env_get = MagicMock(return_value="VALID_API_KEY")
+        monkeypatch.setattr(os, 'environ', {'get': mock_env_get})
+
+        mock_genai_configure = MagicMock(side_effect=Exception("Configuration error"))
+        monkeypatch.setattr(google.generativeai, 'configure', mock_genai_configure)
+
+        model = get_gemini_model()
+
+        assert model is None
+        mock_genai_configure.assert_called_once_with(api_key="VALID_API_KEY")
+
+    def test_get_gemini_model_generativemodel_fails(self, monkeypatch):
+        """Test model retrieval fails if genai.GenerativeModel raises an exception."""
+        mock_env_get = MagicMock(return_value="VALID_API_KEY")
+        monkeypatch.setattr(os, 'environ', {'get': mock_env_get})
+
+        mock_genai_configure = MagicMock()
+        monkeypatch.setattr(google.generativeai, 'configure', mock_genai_configure)
+
+        mock_genai_generative_model = MagicMock(side_effect=Exception("Model creation error"))
+        monkeypatch.setattr(google.generativeai, 'GenerativeModel', mock_genai_generative_model)
+
+        model = get_gemini_model()
+
+        assert model is None
+        mock_genai_configure.assert_called_once_with(api_key="VALID_API_KEY")
+        mock_genai_generative_model.assert_called_once_with('gemini-pro')
+
+
+from services.gemini_service import generate_event_summary_with_gemini, parse_event_text_with_gemini # Added parse_event_text_with_gemini
+
+# Mock datetime for consistent "today" in tests that use it for prompts
+MOCK_DATETIME_NOW = datetime(2024, 1, 1, 10, 0, 0) # Example: Jan 1, 2024, 10:00 AM
+
+class TestParseEventTextWithGemini:
+    VALID_TEXT_INPUT = "Meeting with team tomorrow at 2pm"
+    EXPECTED_PARSED_JSON = {
+        "title": "Meeting with team",
+        "date": "2024-01-02", # Assuming MOCK_DATETIME_NOW is Jan 1, tomorrow is Jan 2
+        "start_time": "14:00",
+        "end_time": None,
+        "description": None,
+        "location": None
+    }
+
+    def _mock_gemini_interaction(self, monkeypatch, response_text=None, side_effect=None, get_model_returns_none=False):
+        mock_model_instance = MagicMock()
+        if side_effect:
+            mock_model_instance.generate_content.side_effect = side_effect
+        elif response_text:
+            mock_gemini_response = MagicMock()
+            mock_gemini_response.text = response_text
+            mock_model_instance.generate_content.return_value = mock_gemini_response
+
+        mock_get_model = MagicMock()
+        if get_model_returns_none:
+            mock_get_model.return_value = None
+        else:
+            mock_get_model.return_value = mock_model_instance
+
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+        return mock_get_model, mock_model_instance
+
+    @pytest.fixture(autouse=True)
+    def mock_datetime_now(self, monkeypatch):
+        """Fixture to mock datetime.now() for all tests in this class."""
+        mock_dt = MagicMock()
+        mock_dt.now.return_value = MOCK_DATETIME_NOW
+        monkeypatch.setattr('services.gemini_service.datetime', mock_dt)
+        return mock_dt
+
+    def test_parse_event_success(self, monkeypatch, mock_datetime_now):
+        """Test successful event parsing from text."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=json.dumps(self.EXPECTED_PARSED_JSON)
+        )
+
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+
+        assert result == self.EXPECTED_PARSED_JSON
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+        # Check prompt for dynamic date content
+        prompt = mock_model_instance.generate_content.call_args[0][0]
+        assert f"Today's year is {MOCK_DATETIME_NOW.year}" in prompt
+        assert f"today being {MOCK_DATETIME_NOW.strftime('%Y-%m-%d')}" in prompt
+        assert f"use today's date: {MOCK_DATETIME_NOW.strftime('%Y-%m-%d')}" in prompt
+
+    def test_parse_event_gemini_returns_markdown_json(self, monkeypatch, mock_datetime_now):
+        """Test successful parsing when Gemini wraps JSON in markdown."""
+        markdown_response = f"```json\n{json.dumps(self.EXPECTED_PARSED_JSON)}\n```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=markdown_response
+        )
+
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+        assert result == self.EXPECTED_PARSED_JSON
+
+    def test_parse_event_gemini_returns_simple_markdown_json(self, monkeypatch, mock_datetime_now):
+        """Test successful parsing when Gemini wraps JSON in simple markdown."""
+        markdown_response = f"```{json.dumps(self.EXPECTED_PARSED_JSON)}```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=markdown_response
+        )
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+        assert result == self.EXPECTED_PARSED_JSON
+
+    def test_parse_event_api_key_not_configured(self, monkeypatch, mock_datetime_now):
+        """Test handling when get_gemini_model returns None (API key issue)."""
+        mock_get_model, _ = self._mock_gemini_interaction(monkeypatch, get_model_returns_none=True)
+
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+
+        assert isinstance(result, dict)
+        assert result["error"] == "Gemini API not configured"
+        mock_get_model.assert_called_once()
+
+    def test_parse_event_gemini_api_error(self, monkeypatch, mock_datetime_now):
+        """Test handling of an error during the Gemini API call."""
+        error_message = "Gemini network error"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, side_effect=Exception(error_message)
+        )
+
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+
+        assert isinstance(result, dict)
+        assert result["error"] == error_message
+        assert result["detail"] == "Failed to parse event text using Gemini."
+        assert "raw_response" in result # Should contain 'No response text available' or actual if response was formed before error
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_parse_event_malformed_json_response(self, monkeypatch, mock_datetime_now):
+        """Test handling of a malformed JSON response from Gemini."""
+        malformed_json_text = "This is not JSON {oops"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=malformed_json_text
+        )
+
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+
+        assert isinstance(result, dict)
+        assert result["error"] # Should have a JSONDecodeError string or similar
+        assert result["detail"] == "Failed to parse event text using Gemini."
+        assert result["raw_response"] == malformed_json_text
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_parse_event_gemini_empty_string_response(self, monkeypatch, mock_datetime_now):
+        """Test handling of an empty string response from Gemini."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=""
+        )
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+        assert isinstance(result, dict)
+        assert result["error"] # Expecting a JSONDecodeError due to empty string
+        assert result["detail"] == "Failed to parse event text using Gemini."
+        assert result["raw_response"] == ""
+
+    def test_parse_event_gemini_empty_json_object_response(self, monkeypatch, mock_datetime_now):
+        """Test handling of an empty JSON object {} response from Gemini."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text="{}"
+        )
+        result = parse_event_text_with_gemini(self.VALID_TEXT_INPUT)
+        assert result == {} # Service currently returns the parsed empty dict
+
+from services.gemini_service import find_free_time_slots_with_gemini # Import for the class
+
+class TestFindFreeTimeSlotsWithGemini:
+    USER_QUERY = "Find a 1-hour slot tomorrow morning"
+    # Using MOCK_DATETIME_NOW (Jan 1, 2024), so "tomorrow" would be Jan 2, 2024
+    # Adjusting EVENTS_JSON and EXPECTED_SLOTS to reflect a consistent scenario with MOCK_DATETIME_NOW
+    EVENTS_JSON = json.dumps([
+        {"title": "Existing Meeting", "start_time": f"{MOCK_DATETIME_NOW.year}-01-02T09:00:00", "end_time": f"{MOCK_DATETIME_NOW.year}-01-02T09:30:00"}
+    ])
+    EXPECTED_SLOTS = [
+        {"start_time": f"{MOCK_DATETIME_NOW.year}-01-02T10:00:00", "end_time": f"{MOCK_DATETIME_NOW.year}-01-02T11:00:00"},
+        {"start_time": f"{MOCK_DATETIME_NOW.year}-01-02T14:00:00", "end_time": f"{MOCK_DATETIME_NOW.year}-01-02T15:00:00"}
+    ]
+
+    def _mock_gemini_interaction(self, monkeypatch, response_text=None, side_effect=None, get_model_returns_none=False):
+        mock_model_instance = MagicMock()
+        if side_effect:
+            mock_model_instance.generate_content.side_effect = side_effect
+        elif response_text is not None: # Allow empty string as valid response text
+            mock_gemini_response = MagicMock()
+            mock_gemini_response.text = response_text
+            mock_model_instance.generate_content.return_value = mock_gemini_response
+
+        mock_get_model = MagicMock()
+        if get_model_returns_none:
+            mock_get_model.return_value = None
+        else:
+            mock_get_model.return_value = mock_model_instance
+
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+        return mock_get_model, mock_model_instance
+
+    @pytest.fixture(autouse=True)
+    def mock_datetime_now(self, monkeypatch):
+        """Fixture to mock datetime.now() for all tests in this class."""
+        mock_dt = MagicMock()
+        mock_dt.now.return_value = MOCK_DATETIME_NOW
+        monkeypatch.setattr('services.gemini_service.datetime', mock_dt)
+        return mock_dt
+
+    def test_find_free_time_successful_response(self, monkeypatch, mock_datetime_now):
+        """
+        Tests successful retrieval and parsing of free time slots from Gemini.
+        """
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=json.dumps(self.EXPECTED_SLOTS)
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert result == self.EXPECTED_SLOTS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+        prompt = mock_model_instance.generate_content.call_args[0][0]
+        assert f"Today's date is {MOCK_DATETIME_NOW.strftime('%Y-%m-%d')}" in prompt
+        assert self.USER_QUERY in prompt
+        assert self.EVENTS_JSON in prompt
+
+    def test_find_free_time_api_key_not_configured(self, monkeypatch, mock_datetime_now):
+        """
+        Tests the scenario where the Gemini API key is not configured.
+        """
+        mock_get_model, _ = self._mock_gemini_interaction(monkeypatch, get_model_returns_none=True)
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert isinstance(result, dict)
+        assert result.get("error") == "Gemini API not configured"
+        assert result.get("detail") == "API key missing or invalid."
+        mock_get_model.assert_called_once()
+
+    def test_find_free_time_gemini_api_error(self, monkeypatch, mock_datetime_now):
+        """
+        Tests handling of an error during the Gemini API call.
+        """
+        error_msg = "Gemini network error"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, side_effect=Exception(error_msg)
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert isinstance(result, dict)
+        assert result.get("error") == "Gemini API error"
+        assert result.get("detail") == error_msg
+        assert "raw_response" in result
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_find_free_time_malformed_json_response(self, monkeypatch, mock_datetime_now):
+        """
+        Tests handling of a malformed JSON response from Gemini.
+        """
+        malformed_text = "Not JSON {oops"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=malformed_text
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert isinstance(result, dict)
+        assert result.get("error") == "Invalid JSON response from Gemini"
+        assert result.get("raw_response") == malformed_text
+        assert "detail" in result
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_find_free_time_empty_array_response(self, monkeypatch, mock_datetime_now):
+        """
+        Tests handling of an empty array JSON response from Gemini (no slots found).
+        """
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text="[]"
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert result == []
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_find_free_time_json_wrapped_in_markdown_ticks(self, monkeypatch, mock_datetime_now):
+        """
+        Tests successful parsing when JSON is wrapped in markdown backticks.
+        """
+        response_text = f"```json\n{json.dumps(self.EXPECTED_SLOTS)}\n```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=response_text
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert result == self.EXPECTED_SLOTS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_find_free_time_json_wrapped_in_simple_markdown_ticks(self, monkeypatch, mock_datetime_now):
+        """
+        Tests successful parsing when JSON is wrapped in simple markdown backticks.
+        """
+        response_text = f"```{json.dumps(self.EXPECTED_SLOTS)}```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=response_text
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert result == self.EXPECTED_SLOTS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+
+    def test_find_free_time_empty_string_response_handled_as_empty_list(self, monkeypatch, mock_datetime_now):
+        """
+        Tests that an empty string response from Gemini is handled as an empty list.
+        """
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=""
+        )
+        result = find_free_time_slots_with_gemini(self.USER_QUERY, self.EVENTS_JSON)
+        assert result == []
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
 class TestGenerateEventSummary:
 
@@ -254,295 +585,134 @@ class TestGenerateEventSummary:
         assert result["error"] == "Gemini API returned an unexpected response structure"
         assert result.get("status_code") == 500
         mock_model_instance.generate_content.assert_called_once()
-    # Check that today's date was included in the prompt
-    called_prompt = mock_model_instance.generate_content.call_args[0][0]
-    assert datetime.now().strftime('%Y-%m-%d') in called_prompt
-
-def test_find_free_time_api_key_not_configured(monkeypatch):
-    """
-    Tests the scenario where the Gemini API key is not configured.
-    """
-    mock_get_gemini_model = MagicMock(return_value=None)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-
-    assert isinstance(result, dict)
-    assert result.get("error") == "Gemini API not configured"
-    assert result.get("detail") == "API key missing or invalid."
-    mock_get_gemini_model.assert_called_once()
-
-def test_find_free_time_gemini_api_error(monkeypatch):
-    """
-    Tests handling of an error during the Gemini API call.
-    """
-    mock_model_instance = MagicMock()
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    mock_model_instance.generate_content.side_effect = Exception("Gemini network error")
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-
-    assert isinstance(result, dict)
-    assert result.get("error") == "Gemini API error"
-    assert result.get("detail") == "Gemini network error"
-    # Ensure raw_response is included, even if it's a generic message for this type of error
-    assert "raw_response" in result
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_find_free_time_malformed_json_response(monkeypatch):
-    """
-    Tests handling of a malformed JSON response from Gemini.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    malformed_json_text = "This is not JSON, it's just a string {oops"
-    mock_gemini_response.text = malformed_json_text
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-
-    assert isinstance(result, dict)
-    assert result.get("error") == "Invalid JSON response from Gemini"
-    assert result.get("raw_response") == malformed_json_text
-    assert "detail" in result # Should contain the JSONDecodeError string
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_find_free_time_empty_array_response(monkeypatch):
-    """
-    Tests handling of an empty array JSON response from Gemini (no slots found).
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    mock_gemini_response.text = "[]"
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-
-    assert result == []
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_find_free_time_json_wrapped_in_markdown_ticks(monkeypatch):
-    """
-    Tests successful parsing when JSON is wrapped in markdown backticks.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    expected_slots = [{"start_time": "2024-08-05T10:00:00", "end_time": "2024-08-05T11:00:00"}]
-    # Test with ```json prefix and ``` suffix
-    mock_gemini_response.text = f"```json\n{json.dumps(expected_slots)}\n```"
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-    assert result == expected_slots
-    mock_get_gemini_model.assert_called_once() # Should be called once per test
-    mock_model_instance.generate_content.assert_called_once()
-
-
-def test_find_free_time_json_wrapped_in_simple_markdown_ticks(monkeypatch):
-    """
-    Tests successful parsing when JSON is wrapped in simple markdown backticks.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    expected_slots = [{"start_time": "2024-08-06T12:00:00", "end_time": "2024-08-06T13:00:00"}]
-    # Test with ``` prefix and ``` suffix but no "json" language identifier
-    mock_gemini_response.text = f"```{json.dumps(expected_slots)}```" # One line, simple ticks
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    # Reset and re-assign mock_get_gemini_model for this specific test case, or ensure it's fresh
-    # if tests are run in isolation or monkeypatch is function-scoped (which it is by default in pytest)
-    current_mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', current_mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-    assert result == expected_slots
-    current_mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once() # This will be the second call if instance is shared and not reset
-
-def test_find_free_time_empty_string_response_handled_as_empty_list(monkeypatch):
-    """
-    Tests that an empty string response from Gemini is handled as an empty list.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    mock_gemini_response.text = "" # Empty string
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = find_free_time_slots_with_gemini("any query", "[]")
-
-    assert result == [] # As per function logic, empty string should result in empty list
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-# To run these tests, navigate to the `backend` directory and run `pytest`
+        # mock_model_instance.generate_content.assert_called_once() # This line was causing an error due to delattr
+        # Instead, check that get_gemini_model was called, and it returned a model,
+        # but the model's generate_content led to an error due to missing attributes on the response.
+        mock_get_model.assert_called_once()
+        # We can't assert_called_once on generate_content if the test setup involves deleting attributes
+        # from the response object that the service code might try to access *after* generate_content returns.
+        # The core of this test is that the service handles a response lacking .text/.parts.
+        # So, generate_content *was* called.
 # Ensure services/gemini_service.py can be imported from that location.
 # Example: python -m pytest tests/test_gemini_service.py
 # (or simply `pytest` if __init__.py files are set up correctly for package discovery)
 
 from services.gemini_service import suggest_tags_for_event # Added import
 
-# Test cases for suggest_tags_for_event
+class TestSuggestTagsForEvent:
+    TITLE = "Team Meeting"
+    DESCRIPTION = "Discuss project milestones"
+    EXPECTED_TAGS = ["work", "meeting"]
+    DEFAULT_TAGS = ["general"]
 
-def test_suggest_tags_success(monkeypatch):
-    """
-    Tests successful tag suggestion from Gemini.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    expected_tags = ["work", "meeting"]
-    mock_gemini_response.text = json.dumps(expected_tags)
-    mock_model_instance.generate_content.return_value = mock_gemini_response
+    def _mock_gemini_interaction(self, monkeypatch, response_text=None, side_effect=None, get_model_returns_none=False):
+        mock_model_instance = MagicMock()
+        if side_effect:
+            mock_model_instance.generate_content.side_effect = side_effect
+        elif response_text is not None:
+            mock_gemini_response = MagicMock()
+            mock_gemini_response.text = response_text
+            mock_model_instance.generate_content.return_value = mock_gemini_response
 
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+        mock_get_model = MagicMock()
+        if get_model_returns_none:
+            mock_get_model.return_value = None
+        else:
+            mock_get_model.return_value = mock_model_instance
 
-    result = suggest_tags_for_event("Team Meeting", "Discuss project milestones")
+        monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_model)
+        return mock_get_model, mock_model_instance
 
-    assert result == expected_tags
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-    # Check that title and description were included in the prompt
-    called_prompt = mock_model_instance.generate_content.call_args[0][0]
-    assert "Team Meeting" in called_prompt
-    assert "Discuss project milestones" in called_prompt
+    def test_suggest_tags_success(self, monkeypatch):
+        """Tests successful tag suggestion from Gemini."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=json.dumps(self.EXPECTED_TAGS)
+        )
+        result = suggest_tags_for_event(self.TITLE, self.DESCRIPTION)
+        assert result == self.EXPECTED_TAGS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
+        called_prompt = mock_model_instance.generate_content.call_args[0][0]
+        assert self.TITLE in called_prompt
+        assert self.DESCRIPTION in called_prompt
 
-def test_suggest_tags_gemini_error_returns_default(monkeypatch):
-    """
-    Tests that a Gemini API error results in the default tag list.
-    """
-    mock_model_instance = MagicMock()
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+    def test_suggest_tags_gemini_error_returns_default(self, monkeypatch):
+        """Tests that a Gemini API error results in the default tag list."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, side_effect=Exception("Gemini network error")
+        )
+        result = suggest_tags_for_event("Error case", "Test error")
+        assert result == self.DEFAULT_TAGS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
-    mock_model_instance.generate_content.side_effect = Exception("Gemini network error")
+    def test_suggest_tags_invalid_json_returns_default(self, monkeypatch):
+        """Tests that an invalid JSON response from Gemini results in the default tag list."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text="this is not valid json"
+        )
+        result = suggest_tags_for_event("Invalid JSON", "Test invalid response")
+        assert result == self.DEFAULT_TAGS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
-    result = suggest_tags_for_event("Error case", "Test error")
+    def test_suggest_tags_empty_list_from_gemini(self, monkeypatch):
+        """Tests that an empty list from Gemini is returned as such."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=json.dumps([])
+        )
+        result = suggest_tags_for_event("Empty list", "Test empty list response")
+        assert result == []
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
-    assert result == ["general"]
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
+    def test_suggest_tags_gemini_model_none(self, monkeypatch):
+        """Tests that if get_gemini_model returns None, default tags are returned."""
+        mock_get_model, _ = self._mock_gemini_interaction(monkeypatch, get_model_returns_none=True)
+        result = suggest_tags_for_event("No model", "Test no model available")
+        assert result == self.DEFAULT_TAGS
+        mock_get_model.assert_called_once()
 
-def test_suggest_tags_invalid_json_returns_default(monkeypatch):
-    """
-    Tests that an invalid JSON response from Gemini results in the default tag list.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    mock_gemini_response.text = "this is not valid json"
-    mock_model_instance.generate_content.return_value = mock_gemini_response
+    def test_suggest_tags_markdown_stripping(self, monkeypatch):
+        """Tests that markdown backticks are stripped from Gemini response."""
+        response_text = f"```json\n{json.dumps(self.EXPECTED_TAGS)}\n```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=response_text
+        )
+        result = suggest_tags_for_event("Markdown Test", "Check stripping")
+        assert result == self.EXPECTED_TAGS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
+    def test_suggest_tags_simple_markdown_stripping(self, monkeypatch):
+        """Tests stripping of simple markdown backticks."""
+        response_text = f"```{json.dumps(self.EXPECTED_TAGS)}```"
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=response_text
+        )
+        result = suggest_tags_for_event("Simple Markdown Test", "Check simple stripping")
+        assert result == self.EXPECTED_TAGS
 
-    result = suggest_tags_for_event("Invalid JSON", "Test invalid response")
+    def test_suggest_tags_unexpected_json_structure(self, monkeypatch):
+        """Tests that an unexpected JSON structure (e.g., dict instead of list) returns default."""
+        response_text = json.dumps({"tag": "work", "confidence": 0.9}) # dict instead of list
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=response_text
+        )
+        result = suggest_tags_for_event("Unexpected JSON", "Test structure")
+        assert result == self.DEFAULT_TAGS
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
-    assert result == ["general"]
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_suggest_tags_empty_list_from_gemini(monkeypatch):
-    """
-    Tests that an empty list from Gemini is returned as such.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    mock_gemini_response.text = json.dumps([]) # Gemini returns an empty list
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = suggest_tags_for_event("Empty list", "Test empty list response")
-
-    assert result == []
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_suggest_tags_gemini_model_none(monkeypatch):
-    """
-    Tests that if get_gemini_model returns None, default tags are returned.
-    """
-    mock_get_gemini_model = MagicMock(return_value=None)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = suggest_tags_for_event("No model", "Test no model available")
-
-    assert result == ["general"]
-    mock_get_gemini_model.assert_called_once()
-
-def test_suggest_tags_markdown_stripping(monkeypatch):
-    """
-    Tests that markdown backticks are stripped from Gemini response.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    expected_tags = ["project", "update"]
-    mock_gemini_response.text = f"```json\n{json.dumps(expected_tags)}\n```"
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = suggest_tags_for_event("Markdown Test", "Check stripping")
-
-    assert result == expected_tags
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_suggest_tags_unexpected_json_structure(monkeypatch):
-    """
-    Tests that an unexpected JSON structure (e.g., dict instead of list) returns default.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    # Gemini returns a dictionary instead of a list of strings
-    mock_gemini_response.text = json.dumps({"tag": "work", "confidence": 0.9})
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = suggest_tags_for_event("Unexpected JSON", "Test structure")
-
-    assert result == ["general"] # Fallback for unexpected structure
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
-def test_suggest_tags_empty_string_response_from_gemini(monkeypatch):
-    """
-    Tests that an empty string response from Gemini results in default tags.
-    """
-    mock_model_instance = MagicMock()
-    mock_gemini_response = MagicMock()
-    mock_gemini_response.text = "" # Empty string response
-    mock_model_instance.generate_content.return_value = mock_gemini_response
-
-    mock_get_gemini_model = MagicMock(return_value=mock_model_instance)
-    monkeypatch.setattr('services.gemini_service.get_gemini_model', mock_get_gemini_model)
-
-    result = suggest_tags_for_event("Empty String", "Test empty string response")
-
-    assert result == ["general"] # As per implementation, empty string leads to "general"
-    mock_get_gemini_model.assert_called_once()
-    mock_model_instance.generate_content.assert_called_once()
-
+    def test_suggest_tags_empty_string_response_from_gemini(self, monkeypatch):
+        """Tests that an empty string response from Gemini results in default tags."""
+        mock_get_model, mock_model_instance = self._mock_gemini_interaction(
+            monkeypatch, response_text=""
+        )
+        result = suggest_tags_for_event("Empty String", "Test empty string response")
+        assert result == self.DEFAULT_TAGS # As per implementation, empty string leads to "general"
+        mock_get_model.assert_called_once()
+        mock_model_instance.generate_content.assert_called_once()
 
 # Import the function to be tested
 from services.gemini_service import get_related_information_for_event
@@ -740,6 +910,34 @@ def test_get_related_info_prompt_construction_with_meal_keyword_description(monk
     mock_model_instance.generate_content.assert_called_once()
     prompt = mock_model_instance.generate_content.call_args[0][0]
     assert "Restaurant suggestions" in prompt
+    assert "Relevant news articles or documents" in prompt
+
+def test_get_related_info_prompt_construction_no_meal_keywords_with_desc(monkeypatch):
+    """Test prompt construction when title and description are provided but have no meal keywords."""
+    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": [], "related_content": []}
+    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_partial_response))
+
+    get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, event_title="General Meeting", event_description="Standard team sync up.")
+
+    mock_model_instance.generate_content.assert_called_once()
+    prompt = mock_model_instance.generate_content.call_args[0][0]
+    assert "General Meeting" in prompt # Title should be in prompt
+    assert "Standard team sync up" in prompt # Description should be in prompt
+    assert "Restaurant suggestions" not in prompt
+    assert "Return an empty list for suggestions" in prompt # Explicitly asking for empty list
+    assert "Relevant news articles or documents" in prompt
+
+def test_get_related_info_prompt_construction_no_title_with_meal_keyword_description(monkeypatch):
+    """Test prompt construction when title is None, but description contains a meal keyword."""
+    expected_partial_response = {"weather": {}, "traffic": {}, "suggestions": [], "related_content": []}
+    _, mock_model_instance = mock_gemini_model(monkeypatch, response_text=json.dumps(expected_partial_response))
+
+    get_related_information_for_event(EVENT_LOCATION, EVENT_START_ISO, event_title=None, event_description=EVENT_DESC_MEAL)
+
+    mock_model_instance.generate_content.assert_called_once()
+    prompt = mock_model_instance.generate_content.call_args[0][0]
+    assert EVENT_DESC_MEAL in prompt # Description should be in prompt
+    assert "Restaurant suggestions" in prompt # Should ask for suggestions
     assert "Relevant news articles or documents" in prompt
 
 def test_get_related_info_missing_top_level_keys_from_gemini(monkeypatch):
