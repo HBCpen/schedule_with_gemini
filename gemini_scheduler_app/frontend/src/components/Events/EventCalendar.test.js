@@ -5,7 +5,21 @@ import EventCalendar from './EventCalendar';
 import eventService from '../../services/eventService';
 
 // Mock the eventService
-jest.mock('../../services/eventService');
+jest.mock('../../services/eventService', () => ({
+  __esModule: true,
+  default: {
+    createEvent: jest.fn(),
+    getEvents: jest.fn(),
+    getEventById: jest.fn(),
+    updateEvent: jest.fn(),
+    deleteEvent: jest.fn(),
+    parseNaturalLanguageEvent: jest.fn(),
+    getEventRelatedInfo: jest.fn(),
+    searchEvents: jest.fn(),
+    findFreeTime: jest.fn(),
+    getEventSummary: jest.fn(),
+  },
+}));
 
 // Mock FullCalendar components to simplify testing
 jest.mock('@fullcalendar/react', () => {
@@ -13,11 +27,27 @@ jest.mock('@fullcalendar/react', () => {
   return function FullCalendarMock({ events, eventClick }) {
     return (
       <div data-testid="fullcalendar-mock">
-        {events.map(event => (
-          <div key={event.id || event.title} data-testid={`event-${event.rawEvent?.id || event.id}`} onClick={() => eventClick ? eventClick({ event: { ...event, extendedProps: { rawEvent: event.rawEvent } } }) : null}>
-            {event.title}
-          </div>
-        ))}
+        {events.map((fcEvent, index) => {
+          const backendId = fcEvent.extendedProps?.rawEvent?.rawEvent?.id;
+          const fallbackId = fcEvent.id;
+          const testIdPart = backendId || fallbackId || `fallback-key-${index}`;
+
+          return (
+            <div
+              key={testIdPart}
+              data-testid={`event-${testIdPart}`} // This should now correctly use 'event123' etc.
+              onClick={() => {
+                if (eventClick) {
+                  // The EventCalendar component's handleEventClick expects the fcEvent structure
+                  // where original data is in fcEvent.extendedProps.rawEvent (which itself contains rawEvent.id)
+                  eventClick({ event: fcEvent });
+                }
+              }}
+            >
+              {fcEvent.title}
+            </div>
+          );
+        })}
       </div>
     );
   };

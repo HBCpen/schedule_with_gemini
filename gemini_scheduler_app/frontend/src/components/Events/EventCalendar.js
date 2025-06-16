@@ -61,7 +61,7 @@ const EventCalendar = ({ events, onEventEdit, onEventDelete, onViewChange }) => 
                 setRelatedInfoLoading(false);
             }
         };
-        fetchRelatedInfo(selectedEvent.rawEvent.id);
+        fetchRelatedInfo(selectedEvent.rawEvent.rawEvent.id); // Corrected: Access nested rawEvent for backend ID
     } else {
         // Clear related info when modal is closed or no event selected
         setRelatedInfo(null);

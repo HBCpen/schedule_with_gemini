@@ -378,11 +378,10 @@ def search_events_api():
     end_date_str = request.args.get('end_date')
     tags_str = request.args.get('tags') # Expecting comma-separated string like "work,personal"
 
-    # Validate date formats (basic validation, more can be added in service)
-    # The service's parse_datetime_flexible will handle more complex validation for search as well
-    # No need for redundant validation here if service handles it.
-    # However, keeping basic format checks can be a quick feedback mechanism.
-    # For now, let's assume event_service.search_events also has robust date parsing or relies on parse_datetime_flexible
+    if start_date_str and parse_datetime(start_date_str) is None:
+        return jsonify({"msg": "Invalid start_date format. Use ISO format."}), 400
+    if end_date_str and parse_datetime(end_date_str) is None:
+        return jsonify({"msg": "Invalid end_date format. Use ISO format."}), 400
 
     try:
         results = event_service.search_events( # Call using event_service module

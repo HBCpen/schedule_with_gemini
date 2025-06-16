@@ -27,13 +27,6 @@ def parse_event_text_with_gemini(text_input):
         return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
 
     current_year = datetime.now().year
-    # Note: For "tomorrow" or "next Monday", actual date calculation would require
-    # knowing the current date when this function is called.
-    # This can be added here or handled by the client before sending to Gemini.
-    # For simplicity in this prompt, we are showing placeholders.
-    # A more robust solution would calculate these dates before inserting into the prompt
-    # or have Gemini explicitly state "tomorrow" and then the backend service converts it.
-
     prompt = f"""Extract event details from the following text.
 Text: "{text_input}"
 
@@ -78,27 +71,21 @@ If you cannot extract some information, set the corresponding JSON field to null
 Provide only the JSON object in your response, without any surrounding text or markdown formatting like ```json ... ```.
 """
     try:
-        # print(f"DEBUG: Sending prompt to Gemini: {prompt}")
         response = model.generate_content(prompt)
-        # print(f"DEBUG: Raw Gemini Response: {response.text}")
-
         cleaned_response = response.text.strip()
-        # Handle cases where Gemini might still wrap in markdown despite instructions
         if cleaned_response.startswith("```json"):
             cleaned_response = cleaned_response[7:]
             if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
-        elif cleaned_response.startswith("```"): # Less common but possible
+        elif cleaned_response.startswith("```"):
              cleaned_response = cleaned_response[3:]
              if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
-
         parsed_json = json.loads(cleaned_response.strip())
         return parsed_json
     except Exception as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error calling Gemini API or parsing response: {e}")
-        # print(f"Failed prompt: {prompt}") # Be careful logging full prompts if they contain sensitive info
         print(f"Failed raw response: {raw_response_text}")
         return {"error": str(e), "detail": "Failed to parse event text using Gemini.", "raw_response": raw_response_text}
 
@@ -132,10 +119,7 @@ Example of expected output for a query like "Find a 1-hour slot tomorrow morning
 Provide only the JSON array in your response, without any surrounding text or markdown formatting like ```json ... ```.
 """
     try:
-        # print(f"DEBUG: Sending find_free_time prompt to Gemini: {prompt}") # Uncomment for debugging if needed
         response = model.generate_content(prompt)
-        # print(f"DEBUG: Raw Gemini Response for find_free_time: {response.text}") # Uncomment for debugging
-
         cleaned_response = response.text.strip()
         if cleaned_response.startswith("```json"):
             cleaned_response = cleaned_response[7:]
@@ -145,36 +129,27 @@ Provide only the JSON array in your response, without any surrounding text or ma
              cleaned_response = cleaned_response[3:]
              if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
-
-        # Gemini might return a plain list, or a string that needs to be parsed.
-        # If it's already a list (less likely for text model), use it directly.
-        # More likely, it's a string representation of a list.
-        if not cleaned_response: # Handle empty string response
+        if not cleaned_response:
             return []
-
         parsed_json = json.loads(cleaned_response)
         return parsed_json
     except json.JSONDecodeError as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error decoding JSON from Gemini for free time: {e}")
         print(f"Failed raw response: {raw_response_text}")
-        return {{"error": "Invalid JSON response from Gemini", "detail": str(e), "raw_response": raw_response_text}}
+        return {"error": "Invalid JSON response from Gemini", "detail": str(e), "raw_response": raw_response_text}
     except Exception as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error calling Gemini API or processing response for free time: {e}")
-        # print(f"Failed prompt: {prompt}") # Be careful logging sensitive info
         print(f"Failed raw response: {raw_response_text}")
-        return {{"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}}
+        return {"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}
 
 
 def suggest_tags_for_event(title: str, description: str):
-    """
-    Suggests relevant tags for an event based on its title and description using Gemini.
-    """
     model = get_gemini_model()
     if not model:
         print("Error: Gemini API not configured. Cannot suggest tags.")
-        return ["general"] # Default or empty list on configuration error
+        return ["general"]
 
     prompt = f"""Analyze the following event details and suggest 1 to 3 relevant tags or categories.
 Event Title: "{title}"
@@ -186,50 +161,39 @@ Return your answer as a JSON array of strings. For example: ["work", "meeting"].
 If no specific tags come to mind, you can return an empty array [] or a single tag like ["general"].
 Provide only the JSON array in your response, without any surrounding text or markdown formatting like ```json ... ```.
 """
-
     try:
-        # print(f"DEBUG: Sending tag suggestion prompt to Gemini: {prompt}")
         response = model.generate_content(prompt)
-        # print(f"DEBUG: Raw Gemini Response for tags: {response.text}")
-
         cleaned_response = response.text.strip()
         if cleaned_response.startswith("```json"):
-            cleaned_response = cleaned_response[7:] # Remove ```json\n
+            cleaned_response = cleaned_response[7:]
             if cleaned_response.endswith("```"):
-                cleaned_response = cleaned_response[:-3] # Remove ```
-        elif cleaned_response.startswith("```"): # Less common but possible
-             cleaned_response = cleaned_response[3:] # Remove ```
+                cleaned_response = cleaned_response[:-3]
+        elif cleaned_response.startswith("```"):
+             cleaned_response = cleaned_response[3:]
              if cleaned_response.endswith("```"):
-                cleaned_response = cleaned_response[:-3] # Remove ```
-
-        if not cleaned_response: # Handle empty string response from Gemini
+                cleaned_response = cleaned_response[:-3]
+        if not cleaned_response:
             print("Warning: Received empty response from Gemini for tag suggestion.")
             return ["general"]
-
         tags = json.loads(cleaned_response)
         if isinstance(tags, list) and all(isinstance(tag, str) for tag in tags):
             return tags
         else:
             print(f"Warning: Gemini response for tags was not a list of strings: {tags}")
-            return ["general"] # Fallback for unexpected structure
-
+            return ["general"]
     except json.JSONDecodeError as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error decoding JSON from Gemini for tag suggestion: {e}")
         print(f"Failed raw response for tags: {raw_response_text}")
-        return ["general"] # Fallback for JSON parsing error
+        return ["general"]
     except Exception as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error calling Gemini API or processing response for tag suggestion: {e}")
-        # print(f"Failed prompt for tags: {prompt}") # Be careful logging sensitive info
         print(f"Failed raw response for tags: {raw_response_text}")
-        return ["general"] # Fallback for other API errors
+        return ["general"]
 
 
 def suggest_subtasks_for_event(event_title: str, event_description: str = None):
-    """
-    Suggests 3-5 actionable subtasks for a given event using the Gemini API.
-    """
     model = get_gemini_model()
     if not model:
         return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
@@ -240,7 +204,6 @@ def suggest_subtasks_for_event(event_title: str, event_description: str = None):
     ]
     if event_description:
         prompt_lines.append(f"Description: {event_description}")
-
     prompt_lines.extend([
         "Please suggest 3 to 5 actionable subtasks or steps to prepare for or complete this event.",
         "Return your suggestions as a JSON formatted list of strings, like:",
@@ -248,46 +211,29 @@ def suggest_subtasks_for_event(event_title: str, event_description: str = None):
         "Provide only the JSON array in your response, without any surrounding text or markdown."
     ])
     prompt = "\n".join(prompt_lines)
-
     try:
-        # print(f"DEBUG: Sending subtask suggestion prompt to Gemini: {prompt}")
         response = model.generate_content(prompt)
-        # print(f"DEBUG: Raw Gemini Response for subtasks: {response.text}")
-
         raw_response_text = response.text if hasattr(response, 'text') else ''
         cleaned_response = raw_response_text.strip()
-
         if cleaned_response.startswith("```json"):
-            cleaned_response = cleaned_response[7:] # Remove ```json\n
+            cleaned_response = cleaned_response[7:]
             if cleaned_response.endswith("```"):
-                cleaned_response = cleaned_response[:-3] # Remove ```
+                cleaned_response = cleaned_response[:-3]
         elif cleaned_response.startswith("```"):
-             cleaned_response = cleaned_response[3:] # Remove ```
+             cleaned_response = cleaned_response[3:]
              if cleaned_response.endswith("```"):
-                cleaned_response = cleaned_response[:-3] # Remove ```
-
-        cleaned_response = cleaned_response.strip() # Ensure no leading/trailing whitespace after markdown removal
-
+                cleaned_response = cleaned_response[:-3]
+        cleaned_response = cleaned_response.strip()
         if not cleaned_response:
-            # print("Warning: Received empty response from Gemini for subtask suggestion.")
             return []
-
         subtasks = json.loads(cleaned_response)
         if isinstance(subtasks, list) and all(isinstance(task, str) for task in subtasks):
             return subtasks
         else:
-            # print(f"Warning: Gemini response for subtasks was not a list of strings: {subtasks}")
-            # Consider returning an error or trying to salvage, for now, error out
             return {"error": "Gemini API response format error", "detail": "Response was not a list of strings.", "raw_response": raw_response_text}
-
     except json.JSONDecodeError as e:
-        # print(f"Error decoding JSON from Gemini for subtask suggestion: {e}")
-        # print(f"Failed raw response for subtasks: {raw_response_text}")
         return {"error": "Invalid JSON response from Gemini", "detail": str(e), "raw_response": raw_response_text}
     except Exception as e:
-        # print(f"Error calling Gemini API or processing response for subtask suggestion: {e}")
-        # print(f"Failed prompt for subtasks: {prompt}")
-        # print(f"Failed raw response for subtasks: {raw_response_text}")
         return {"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text if 'raw_response_text' in locals() else 'No response text available'}
 
 
@@ -295,54 +241,42 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
     """
     Retrieves weather, traffic, and optionally restaurant suggestions for a given event.
     """
-    model = get_gemini_model()
-    if not model:
-        return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
-
-    try:
+    try: # Moved date parsing to the very beginning
         event_dt = datetime.fromisoformat(event_start_datetime_iso.replace("Z", "+00:00"))
         event_date_str = event_dt.strftime('%Y-%m-%d')
         event_time_str = event_dt.strftime('%H:%M')
     except ValueError as e:
         return {"error": "Invalid ISO format for event_start_datetime_iso", "detail": str(e)}
 
-    # Construct the core prompt
+    model = get_gemini_model() # Called only after successful date parsing
+    if not model:
+        return {"error": "Gemini API not configured", "detail": "API key missing or invalid."}
+
     prompt_lines = [
         f"For an event at '{event_location}' on {event_date_str} around {event_time_str}, provide:",
         "- Weather forecast: general condition, high/low temperature, precipitation chance, and a brief summary.",
         "- Traffic overview: congestion level and a travel advisory/summary for the time around the event.",
         "- Relevant news articles or documents related to the event's title or description (if provided). If found, return these as a list under a 'related_content' key. Each item should be an object with 'type' (e.g., 'article', 'document'), 'title', 'source' (if available), and 'url' or 'summary'. If none found, 'related_content' should be an empty list []."
     ]
-
-    # Optional: Add restaurant suggestions if title or description hint at a meal
     meal_keywords = ["lunch", "dinner", "breakfast", "brunch", "meal", "restaurant", "cafe", "food", "eat"]
     ask_for_suggestions = False
     if event_title and any(keyword in event_title.lower() for keyword in meal_keywords):
         ask_for_suggestions = True
     if not ask_for_suggestions and event_description and any(keyword in event_description.lower() for keyword in meal_keywords):
         ask_for_suggestions = True
-
     if ask_for_suggestions:
         prompt_lines.append("- Restaurant suggestions: 1-2 nearby places suitable for the event. Include name and brief details.")
     else:
-        # Ensure the JSON structure still expects 'suggestions' as an empty list
         prompt_lines.append("- Suggestions: Return an empty list for suggestions as they were not requested or applicable.")
-
-
     prompt_lines.append("\nReturn the information as a single JSON object with keys: 'weather', 'traffic', 'suggestions', and 'related_content'.")
     prompt_lines.append("The 'weather' object should contain: 'forecast_date', 'location', 'condition', 'temperature_high', 'temperature_low', 'precipitation_chance', 'summary'.")
     prompt_lines.append("The 'traffic' object should contain: 'location', 'assessment_time', 'congestion_level', 'expected_travel_advisory', 'summary'.")
     prompt_lines.append("The 'suggestions' key should hold a list of objects, each with 'type', 'name', and 'details'. If no suggestions are applicable or found, it should be an empty list [].")
     prompt_lines.append("The 'related_content' key should hold a list of objects, each with 'type', 'title', 'source', and 'url' (or 'summary'). If none found, it should be an empty list [].")
     prompt_lines.append("Provide only the JSON object in your response, without any surrounding text or markdown formatting like ```json ... ```.")
-
     prompt = "\n".join(prompt_lines)
-
     try:
-        # print(f"DEBUG: Sending get_related_information_for_event prompt to Gemini: {prompt}")
         response = model.generate_content(prompt)
-        # print(f"DEBUG: Raw Gemini Response: {response.text}")
-
         cleaned_response = response.text.strip()
         if cleaned_response.startswith("```json"):
             cleaned_response = cleaned_response[7:]
@@ -352,29 +286,16 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
              cleaned_response = cleaned_response[3:]
              if cleaned_response.endswith("```"):
                 cleaned_response = cleaned_response[:-3]
-
         if not cleaned_response:
              return {"error": "Empty response from Gemini", "detail": "Received no content."}
-
         parsed_json = json.loads(cleaned_response.strip())
-
-        # Basic validation for expected keys, can be expanded
         if not all(k in parsed_json for k in ["weather", "traffic", "suggestions", "related_content"]):
-            # print(f"Warning: Gemini response missing some top-level keys. Got: {parsed_json.keys()}")
-            # Attempt to return what we got, or a more specific error
             return {"error": "Malformed response from Gemini", "detail": "Missing one or more top-level keys: 'weather', 'traffic', 'suggestions', 'related_content'.", "raw_response": parsed_json}
-
         if not isinstance(parsed_json.get("suggestions"), list):
-            # print(f"Warning: 'suggestions' field is not a list. Attempting to correct or defaulting to empty list.")
-            parsed_json["suggestions"] = [] # Default to empty list if not a list
-
+            parsed_json["suggestions"] = []
         if not isinstance(parsed_json.get("related_content"), list):
-            # print(f"Warning: 'related_content' field is not a list. Attempting to correct or defaulting to empty list.")
-            parsed_json["related_content"] = [] # Default to empty list if not a list
-
-
+            parsed_json["related_content"] = []
         return parsed_json
-
     except json.JSONDecodeError as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error decoding JSON from Gemini for event information: {e}")
@@ -383,66 +304,42 @@ def get_related_information_for_event(event_location: str, event_start_datetime_
     except Exception as e:
         raw_response_text = response.text if 'response' in locals() and hasattr(response, 'text') else 'No response text available'
         print(f"Error calling Gemini API or processing response for event information: {e}")
-        # print(f"Failed prompt: {prompt}") # Be careful logging sensitive info
         print(f"Failed raw response: {raw_response_text}")
         return {"error": "Gemini API error", "detail": str(e), "raw_response": raw_response_text}
 
-
 def generate_event_summary_with_gemini(events_list_str: str, target_date_str: str = None):
-    """
-    Generates a concise, natural-language summary of events using the Gemini API.
-    Focuses on a target_date_str if provided.
-    """
     model = get_gemini_model()
     if not model:
         return {"error": "Gemini API key not configured", "detail": "GEMINI_API_KEY is missing or invalid in environment variables.", "status_code": 500}
-
     try:
-        # Validate events_list_str
         if not events_list_str or events_list_str.strip() == "[]":
             return {"error": "No events provided for summary.", "detail": "The events list string is empty or contains no events.", "status_code": 400}
-
-        # Basic validation that events_list_str is a valid JSON string representing a list
         try:
             events_test = json.loads(events_list_str)
             if not isinstance(events_test, list):
                 raise ValueError("events_list_str is not a JSON list")
         except json.JSONDecodeError:
             return {"error": "Invalid JSON format for events_list_str.", "detail": "The provided events string is not valid JSON.", "status_code": 400}
-        except ValueError: # Catches the custom ValueError from above
+        except ValueError:
              return {"error": "Invalid data type for events_list_str.", "detail": "The provided events string is not a JSON list.", "status_code": 400}
-
-
         if target_date_str:
             prompt = f"Summarize these events for {target_date_str}. What are the key activities? Keep the summary concise and in natural language.\nEvents:\n{events_list_str}"
         else:
             prompt = f"Summarize these events. What are the key activities? Keep the summary concise and in natural language.\nEvents:\n{events_list_str}"
-
-        # print(f"DEBUG: Sending summary prompt to Gemini: {prompt}")
         response = model.generate_content(prompt)
-
         if response and hasattr(response, 'text') and response.text:
             return response.text.strip()
         elif response and hasattr(response, 'parts') and response.parts:
-             # Handle cases where response.text might be empty but parts exist
             all_text_parts = "".join([part.text for part in response.parts if hasattr(part, 'text')])
             if all_text_parts:
                 return all_text_parts.strip()
-            else: # If no text in parts either
-                # print(f"Warning: Gemini response for summary was empty or had no text content. Prompt: {prompt}")
+            else:
                 return {"error": "Gemini API returned an empty response", "detail": "The API generated no text content for the summary.", "status_code": 500}
         else:
-            # print(f"Warning: Gemini response for summary was empty or malformed. Prompt: {prompt}")
             return {"error": "Gemini API returned an unexpected response structure", "detail": "The API response did not contain the expected text data.", "status_code": 500}
-
     except Exception as e:
-        # print(f"Error calling Gemini API for summary: {e}")
-        # print(f"Failed prompt for summary: {prompt}") # Be careful with sensitive data in logs
         raw_response_text = getattr(e, 'response', {}).get('text', 'No direct response text in exception.')
-        # It's also good to check if the exception itself has useful details if it's a google.api_core.exceptions type
-        # For example, e.message or str(e) might be more informative for API errors.
         error_detail = str(e)
-        if hasattr(e, 'message'): # some google exceptions have a message attribute
+        if hasattr(e, 'message'):
             error_detail = e.message
-
         return {"error": "Gemini API error during summary generation", "detail": error_detail, "raw_response": raw_response_text, "status_code": 500}

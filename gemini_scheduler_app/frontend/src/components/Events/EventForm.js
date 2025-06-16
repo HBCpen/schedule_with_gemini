@@ -162,10 +162,16 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             parts.push(`BYDAY=${byDay.join(',')}`);
         }
         if (until) {
-            // Format for RRULE: YYYYMMDDTHHMMSSZ (use end of day for UNTIL date)
-            const date = new Date(until);
+            const date = new Date(until); // until is 'YYYY-MM-DD'
+            // Ensure it's treated as end of day in UTC for UNTIL rule
             const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59));
-            parts.push(`UNTIL=${utcDate.toISOString().replace(/[-:.]/g, '').slice(0, -1)}Z`);
+            const year = utcDate.getUTCFullYear();
+            const month = (utcDate.getUTCMonth() + 1).toString().padStart(2, '0');
+            const day = utcDate.getUTCDate().toString().padStart(2, '0');
+            const hours = utcDate.getUTCHours().toString().padStart(2, '0');
+            const minutes = utcDate.getUTCMinutes().toString().padStart(2, '0');
+            const seconds = utcDate.getUTCSeconds().toString().padStart(2, '0');
+            parts.push(`UNTIL=${year}${month}${day}T${hours}${minutes}${seconds}Z`);
         }
         return parts.join(';');
     };
@@ -248,36 +254,37 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             {error && <p style={{color: 'red'}}>{error}</p>}
 
             <div>
-                <label>Title:</label>
-                <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                <label htmlFor="event-title">Title:</label>
+                <input id="event-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
             <div>
-                <label>Start Time:</label>
-                <input type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
+                <label htmlFor="event-start-time">Start Time:</label>
+                <input id="event-start-time" type="datetime-local" value={startTime} onChange={(e) => setStartTime(e.target.value)} required />
             </div>
             <div>
-                <label>End Time:</label>
-                <input type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
+                <label htmlFor="event-end-time">End Time:</label>
+                <input id="event-end-time" type="datetime-local" value={endTime} onChange={(e) => setEndTime(e.target.value)} required />
             </div>
             <div>
-                <label>Location:</label>
-                <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} />
+                <label htmlFor="event-location">Location:</label>
+                <input id="event-location" type="text" value={location} onChange={(e) => setLocation(e.target.value)} />
             </div>
             <div>
-                <label>Description:</label>
-                <textarea value={description} onChange={(e) => setDescription(e.target.value)} />
+                <label htmlFor="event-description">Description:</label>
+                <textarea id="event-description" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
             <div>
-                <label>Color Tag (e.g., blue, red):</label>
-                <input type="text" value={colorTag} onChange={(e) => setColorTag(e.target.value)} />
+                <label htmlFor="event-color-tag">Color Tag (e.g., blue, red):</label>
+                <input id="event-color-tag" type="text" value={colorTag} onChange={(e) => setColorTag(e.target.value)} />
             </div>
 
             {/* Reminder Section */}
             <div style={{ marginTop: '10px', marginBottom: '10px', padding: '10px', border: '1px solid #eee', borderRadius: '5px' }}>
                 <h4>Reminder</h4>
                 <div>
-                    <label style={{ marginRight: '10px' }}>
+                    <label htmlFor="event-reminder-enabled" style={{ marginRight: '10px' }}>
                         <input
+                            id="event-reminder-enabled"
                             type="checkbox"
                             checked={reminderEnabled}
                             onChange={(e) => setReminderEnabled(e.target.checked)}
@@ -339,8 +346,8 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
                 </div>
             )}
             <div>
-                <label>Frequency:</label>
-                <select value={freq} onChange={(e) => { setFreq(e.target.value); setByDay([]); /* Reset byDay when freq changes */ }}>
+                <label htmlFor="event-frequency">Frequency:</label>
+                <select id="event-frequency" value={freq} onChange={(e) => { setFreq(e.target.value); setByDay([]); /* Reset byDay when freq changes */ }}>
                     <option value="">Does not repeat</option>
                     <option value="DAILY">Daily</option>
                     <option value="WEEKLY">Weekly</option>
@@ -352,17 +359,23 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
             {freq && (
                 <>
                     <div>
-                        <label>Interval (Repeat every X):</label>
-                        <input type="number" value={interval} min="1" onChange={(e) => setInterval(parseInt(e.target.value,10))} />
-                        <span> {freq.toLowerCase().slice(0,-2)}{(interval > 1 ? 's' : '')}</span>
+                        <label htmlFor="event-interval">Interval (Repeat every X):</label>
+                        <input id="event-interval" type="number" value={interval} min="1" onChange={(e) => setInterval(parseInt(e.target.value,10))} />
+                        <span> {
+                            (() => {
+                                let unit = freq.toLowerCase().replace(/ly$/, '');
+                                if (unit === 'dai') unit = 'day';
+                                return unit;
+                            })()
+                        }{(interval > 1 ? 's' : '')}</span>
                     </div>
 
                     {freq === 'WEEKLY' && (
                         <div>
-                            <label>Repeat on:</label>
+                            <label>Repeat on:</label> {/* This label is for the group, individual checkboxes are queried by their text 'MO', 'TU' etc. */}
                             {['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].map(day => (
-                                <label key={day} style={{marginRight: '5px', display: 'inline-block'}}>
-                                    <input type="checkbox" checked={byDay.includes(day)} onChange={() => handleByDayChange(day)} />
+                                <label key={day} htmlFor={`event-byday-${day}`} style={{marginRight: '5px', display: 'inline-block'}}>
+                                    <input id={`event-byday-${day}`} type="checkbox" checked={byDay.includes(day)} onChange={() => handleByDayChange(day)} />
                                     {day}
                                 </label>
                             ))}
@@ -375,8 +388,8 @@ function EventForm({ eventToEdit, onFormSubmit, onCancelEdit }) {
 
 
                     <div>
-                        <label>Ends (Until Date - Optional):</label>
-                        <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+                        <label htmlFor="event-until-date">Ends (Until Date - Optional):</label>
+                        <input id="event-until-date" type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
                     </div>
                 </>
             )}

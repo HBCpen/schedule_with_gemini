@@ -5,10 +5,11 @@ class Event(db.Model):
     __tablename__ = 'events'
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(120), nullable=False)
-    start_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    end_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow) # Corrected: removed extra parenthesis
+    start_time = db.Column(db.DateTime, nullable=True) # Removed default=datetime.utcnow
+    end_time = db.Column(db.DateTime, nullable=True) # Removed default=datetime.utcnow
     description = db.Column(db.Text, nullable=True)
     color_tag = db.Column(db.Text, nullable=True) # Optional, for comma-separated tags
+    location = db.Column(db.Text, nullable=True) # Added location field
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     reminder_sent = db.Column(db.Boolean, default=False, nullable=False)
 
@@ -25,13 +26,30 @@ class Event(db.Model):
         return f'<Event {self.title}>'
 
     def to_dict(self, is_occurrence=False, occurrence_start_time=None, occurrence_end_time=None):
+        start_dt = occurrence_start_time or self.start_time
+        end_dt = occurrence_end_time or self.end_time
+
+        start_iso = start_dt.isoformat()
+        end_iso = end_dt.isoformat()
+
+        if start_iso.endswith('+00:00'):
+            start_iso = start_iso[:-6] + 'Z'
+        elif not start_iso.endswith('Z'):
+            start_iso += 'Z'
+
+        if end_iso.endswith('+00:00'):
+            end_iso = end_iso[:-6] + 'Z'
+        elif not end_iso.endswith('Z'):
+            end_iso += 'Z'
+
         data = {
             'id': self.id,
             'title': self.title,
-            'start_time': (occurrence_start_time or self.start_time).isoformat() + 'Z',
-            'end_time': (occurrence_end_time or self.end_time).isoformat() + 'Z',
+            'start_time': start_iso,
+            'end_time': end_iso,
             'description': self.description,
             'color_tag': self.color_tag,
+            'location': self.location, # Added location to to_dict
             'user_id': self.user_id,
             'reminder_sent': self.reminder_sent,
             'recurrence_rule': self.recurrence_rule,
@@ -43,5 +61,10 @@ class Event(db.Model):
             # We might also want a unique identifier for an occurrence, e.g., parent_id + occurrence_start_time
             data['is_occurrence'] = True
             # The original start_time of the series is still useful to know
-            data['series_start_time'] = self.start_time.isoformat() + 'Z'
+            series_start_iso = self.start_time.isoformat()
+            if series_start_iso.endswith('+00:00'):
+                series_start_iso = series_start_iso[:-6] + 'Z'
+            elif not series_start_iso.endswith('Z'):
+                series_start_iso += 'Z'
+            data['series_start_time'] = series_start_iso
         return data

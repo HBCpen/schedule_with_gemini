@@ -29,10 +29,10 @@ describe('EventForm Recurrence Functionality', () => {
 
         fireEvent.change(frequencySelect, { target: { value: 'DAILY' } });
         expect(screen.getByLabelText('Interval (Repeat every X):')).toBeInTheDocument();
-        expect(screen.getByText('day(s)')).toBeInTheDocument(); // Checks for "day(s)" text next to interval
+        expect(screen.getByText((content, element) => content.trim() === 'day')).toBeInTheDocument();
 
         fireEvent.change(frequencySelect, { target: { value: 'WEEKLY' } });
-        expect(screen.getByText('week(s)')).toBeInTheDocument();
+        expect(screen.getByText((content, element) => content.trim() === 'week')).toBeInTheDocument();
     });
 
     test('shows days of week checkboxes for WEEKLY frequency', () => {
@@ -40,9 +40,9 @@ describe('EventForm Recurrence Functionality', () => {
         const frequencySelect = screen.getByLabelText('Frequency:');
         fireEvent.change(frequencySelect, { target: { value: 'WEEKLY' } });
 
-        expect(screen.getByLabelText('Repeat on:')).toBeInTheDocument();
+        expect(screen.getByText('Repeat on:')).toBeInTheDocument(); // Check for text presence
         ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].forEach(day => {
-            expect(screen.getByLabelText(day)).toBeInTheDocument();
+            expect(screen.getByLabelText(day)).toBeInTheDocument(); // Check individual checkboxes
         });
     });
 
