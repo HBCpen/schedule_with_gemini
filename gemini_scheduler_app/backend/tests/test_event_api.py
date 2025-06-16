@@ -1369,3 +1369,169 @@ def test_get_event_summary_unauthorized(client, init_database):
     # No token provided
     response = client.get('/api/events/summary')
     assert response.status_code == 401 # Expecting JWT Unauthorized
+
+
+# --- Suggest Event Subtasks API Tests ---
+
+def _create_event_for_subtask_tests(client, token, title="Test Event for Subtasks", description="Description for subtask event"):
+    """Helper to create a basic event for subtask suggestion tests."""
+    start_time = datetime.utcnow() + timedelta(days=1)
+    end_time = start_time + timedelta(hours=1)
+    response = client.post('/api/events', json={
+        'title': title,
+        'start_time': start_time.isoformat() + 'Z',
+        'end_time': end_time.isoformat() + 'Z',
+        'description': description,
+    }, headers={'Authorization': f'Bearer {token}'})
+    assert response.status_code == 201
+    return response.json
+
+
+def test_suggest_event_subtasks_success(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_success@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    expected_subtasks = ["Generated Subtask 1", "Generated Subtask 2"]
+    mock_suggest_call = mocker.patch(
+        'api.event.gemini_service.suggest_subtasks_for_event',
+        return_value=expected_subtasks
+    )
+    # Ensure API key is present for this test path
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: 'fake_api_key' if key == 'GEMINI_API_KEY' else default)
+
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+
+    assert response.status_code == 200
+    assert response.json == expected_subtasks
+    mock_suggest_call.assert_called_once_with(
+        event_title=event_data['title'],
+        event_description=event_data['description']
+    )
+
+def test_suggest_event_subtasks_unauthorized(client, init_database):
+    token = get_auth_token(client, init_database, email='subtaskuser_unauth_setup@example.com')
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks') # No auth header
+    assert response.status_code == 401
+
+
+def test_suggest_event_subtasks_event_not_found(client, init_database):
+    token = get_auth_token(client, init_database, email='subtaskuser_notfound@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+
+    # Ensure API key is present for this test path, though it shouldn't be reached
+    # mocker.patch('api.event.os.environ.get', lambda key, default=None: 'fake_api_key' if key == 'GEMINI_API_KEY' else default)
+    # No need to mock os.environ here as the event not found check comes first.
+
+    response = client.post('/api/events/99999/suggest-subtasks', headers=headers) # Non-existent event ID
+    assert response.status_code == 404
+    assert response.json['msg'] == "Event not found or access denied"
+
+
+def test_suggest_event_subtasks_no_api_key(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_noapikey@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    # Simulate missing API key
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: "" if key == 'GEMINI_API_KEY' else default)
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+    assert response.status_code == 503
+    assert response.json['msg'] == "Task suggestion service is currently unavailable."
+
+def test_suggest_event_subtasks_api_key_placeholder(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_placeholderkey@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: "YOUR_API_KEY_HERE" if key == 'GEMINI_API_KEY' else default)
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+    assert response.status_code == 503
+    assert response.json['msg'] == "Task suggestion service is currently unavailable."
+
+
+def test_suggest_event_subtasks_service_config_error(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_svcconfigerr@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    # Mock os.environ.get to return a valid key so the endpoint proceeds to call the service
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: 'fake_api_key' if key == 'GEMINI_API_KEY' else default)
+
+    error_response_from_service = {"error": "Gemini API not configured", "detail": "Service side API key issue."}
+    mock_suggest_call = mocker.patch(
+        'api.event.gemini_service.suggest_subtasks_for_event',
+        return_value=error_response_from_service
+    )
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+
+    assert response.status_code == 503
+    assert response.json['msg'] == "Task suggestion service is currently unavailable."
+    assert response.json['detail'] == "Service side API key issue."
+    mock_suggest_call.assert_called_once()
+
+
+def test_suggest_event_subtasks_service_generic_error(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_svcgenerr@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: 'fake_api_key' if key == 'GEMINI_API_KEY' else default)
+
+    error_response_from_service = {"error": "Some other Gemini error", "detail": "Generic test detail from service.", "raw_response": "Raw details"}
+    mock_suggest_call = mocker.patch(
+        'api.event.gemini_service.suggest_subtasks_for_event',
+        return_value=error_response_from_service
+    )
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+
+    assert response.status_code == 500
+    assert response.json['msg'] == "Error suggesting subtasks"
+    assert response.json['detail'] == "Generic test detail from service."
+    assert response.json['raw_response'] == "Raw details"
+    mock_suggest_call.assert_called_once()
+
+def test_suggest_event_subtasks_service_returns_non_list(client, init_database, mocker):
+    token = get_auth_token(client, init_database, email='subtaskuser_svcbadfmt@example.com')
+    headers = {'Authorization': f'Bearer {token}'}
+    event_data = _create_event_for_subtask_tests(client, token)
+    event_id = event_data['id']
+
+    mocker.patch('api.event.os.environ.get', lambda key, default=None: 'fake_api_key' if key == 'GEMINI_API_KEY' else default)
+
+    # This case should ideally be handled by the service and returned as an error dictionary.
+    # If the service returns something unexpected (not a list, not an error dict),
+    # the endpoint might pass it through or error differently.
+    # The current endpoint code: `if isinstance(response, dict) and "error" in response:`
+    # If service returns a string or number, it will be directly passed to jsonify.
+    # Let's assume the service correctly wraps its errors.
+    # This test is more for the service returning a malformed success (e.g. string instead of list)
+    # The current service returns an error dict if the format is not a list of strings.
+    # So, this test becomes similar to test_suggest_event_subtasks_service_generic_error
+    # with a specific error message from the service like "Gemini API response format error".
+
+    malformed_success_response = {"error": "Gemini API response format error", "detail": "Response was not a list of strings.", "raw_response": "{'unexpected': 'data'}"}
+    mock_suggest_call = mocker.patch(
+        'api.event.gemini_service.suggest_subtasks_for_event',
+        return_value=malformed_success_response
+    )
+
+    response = client.post(f'/api/events/{event_id}/suggest-subtasks', headers=headers)
+
+    assert response.status_code == 500 # As it's an error dict from service
+    assert response.json['msg'] == "Error suggesting subtasks"
+    assert response.json['detail'] == "Response was not a list of strings."
+    mock_suggest_call.assert_called_once()
