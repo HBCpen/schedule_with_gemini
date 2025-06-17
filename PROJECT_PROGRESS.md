@@ -120,3 +120,18 @@ Check items off as they are completed:
             - Subtask suggestions for events
             - Event summarization
         - **Location:** Tests were added to `gemini_scheduler_app/backend/tests/test_event_api.py`.
+    - [ ] **End-to-End (E2E) Tests (Playwright):**
+        - **Status:** Scripts Created (Execution Blocked)
+        - **Date:** 2024-06-17
+        - **Details:** Developed a suite of E2E tests using Playwright to cover key user flows interacting with Gemini API features. These tests are designed to use the 'Gemini 2.5 Flash' model via the provided API key.
+        - **Functionalities Covered by E2E Scripts:**
+            - Natural language event creation and form pre-fill.
+            - Automatic event tagging (on create and update) based on title/description.
+            - Free-time search and suggestion display.
+            - Display of related event information (weather, traffic, etc.).
+            - Suggestion of subtasks for complex events.
+            - Generation of daily event summaries.
+        - **Location:** Tests scripts are located in the `e2e_tests/tests/` directory.
+        - **Execution Note:** Attempted execution of these E2E tests failed due to environment limitations (timeout during Playwright's `npm install` process). The test scripts are available but could not be run to verify application behavior end-to-end.
+
+[end of PROJECT_PROGRESS.md]
