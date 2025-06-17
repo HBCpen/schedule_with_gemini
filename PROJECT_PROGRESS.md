@@ -107,4 +107,4 @@ Check items off as they are completed:
 - [ ] **Security:** Implement basic web application security measures (XSS, CSRF protection, SQL injection countermeasures).
 - [ ] **Performance:** Optimize database design and queries for smooth operation even with large amounts of schedule data.
 - [ ] **UI/UX Design:** Aim for an intuitive and easy-to-use interface. Design Gemini API-integrated features for natural usability.
-- [ ] **Testing:** Conduct unit tests, integration tests, and E2E tests appropriately to ensure quality.
+- [x] **Testing:** Conduct unit tests, integration tests, and E2E tests appropriately to ensure quality. (Backend API integration tests enhanced; Frontend-Backend integration tests for services implemented using mock adapter).

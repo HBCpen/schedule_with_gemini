@@ -84,6 +84,11 @@ const eventService = {
             headers: getAuthHeaders(),
             params: params
         });
+    },
+
+    // New function for suggesting subtasks
+    suggestSubtasks: (eventId) => {
+        return axios.post(`${API_URL}/${eventId}/suggest-subtasks`, {}, { headers: getAuthHeaders() });
     }
 };
 export default eventService;
