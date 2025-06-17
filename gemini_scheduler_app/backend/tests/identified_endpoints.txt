@@ -1,0 +1,34 @@
+HTTP Method: POST
+Endpoint Path: /api/events
+Function Name: create_event
+Gemini Functionality: Automatic tagging (gemini_service.suggest_tags_for_event)
+
+HTTP Method: PUT
+Endpoint Path: /api/events/<int:event_id>
+Function Name: update_event
+Gemini Functionality: Automatic tagging (gemini_service.suggest_tags_for_event)
+
+HTTP Method: POST
+Endpoint Path: /api/events/parse-natural-language
+Function Name: parse_natural_language_event
+Gemini Functionality: Natural language event parsing (gemini_service.parse_event_text_with_gemini)
+
+HTTP Method: POST
+Endpoint Path: /api/events/find-free-time
+Function Name: find_free_time_api
+Gemini Functionality: Free time search (gemini_service.find_free_time_slots_with_gemini)
+
+HTTP Method: GET
+Endpoint Path: /api/events/<int:event_id>/related-info
+Function Name: get_event_related_information
+Gemini Functionality: Related information (gemini_service.get_related_information_for_event)
+
+HTTP Method: POST
+Endpoint Path: /api/events/<int:event_id>/suggest-subtasks
+Function Name: suggest_event_subtasks
+Gemini Functionality: Subtask suggestion (gemini_service.suggest_subtasks_for_event)
+
+HTTP Method: GET
+Endpoint Path: /api/events/summary
+Function Name: get_event_summary
+Gemini Functionality: Event summarization (gemini_service.generate_event_summary_with_gemini)

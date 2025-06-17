@@ -3,6 +3,7 @@ import os
 from app import create_app, db as _db # alias db to avoid pytest fixture conflict
 
 TEST_DB_FILENAME = 'test_scheduler.db' # Keep it in backend/ for this test run for simplicity
+os.environ['PYTEST_RUNNING'] = 'true' # Signal to create_app that it's a test run
 
 @pytest.fixture(scope='session')
 def app():
