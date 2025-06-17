@@ -25,3 +25,6 @@ class Config:
 
     # Gemini API Key
     GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+
+    # Test Database Filename (used in app.py for testing context)
+    TEST_DB_FILENAME = 'test_scheduler.db'

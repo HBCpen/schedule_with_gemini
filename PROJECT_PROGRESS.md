@@ -108,3 +108,15 @@ Check items off as they are completed:
 - [ ] **Performance:** Optimize database design and queries for smooth operation even with large amounts of schedule data.
 - [ ] **UI/UX Design:** Aim for an intuitive and easy-to-use interface. Design Gemini API-integrated features for natural usability.
 - [x] **Testing:** Conduct unit tests, integration tests, and E2E tests appropriately to ensure quality. (Backend API integration tests enhanced; Frontend-Backend integration tests for services implemented using mock adapter).
+    - [x] **Gemini API Integration Tests (Live):**
+        - **Status:** Completed
+        - **Date:** 2024-08-09 (Placeholder, actual date of completion)
+        - **Details:** Developed and passed integration tests that make live calls to the Gemini API (using the `gemini-1.5-flash` model and the configured API key). These tests cover key Gemini-powered functionalities within the event management API.
+        - **Functionalities Covered:**
+            - Natural language event parsing
+            - Automatic event tagging (on create and update)
+            - Free-time search
+            - Fetching related event information (weather, traffic, etc.)
+            - Subtask suggestions for events
+            - Event summarization
+        - **Location:** Tests were added to `gemini_scheduler_app/backend/tests/test_event_api.py`.
