@@ -61,7 +61,7 @@ This document outlines the necessary tasks to finalize the service.
 ## Phase 2: Testing
 
 - [x] **Unit Testing:** Write and run unit tests for individual components and functions.
-- [ ] **Integration Testing:** Test the interaction between different parts of the service.
+- [x] **Integration Testing:** Test the interaction between different parts of the service.
 - [ ] **End-to-End Testing:** Simulate real user scenarios to test the entire workflow.
 - [ ] **Performance Testing:** Evaluate the service's performance under load and identify bottlenecks.
 - [ ] **Security Testing:** Conduct security audits and penetration testing to identify vulnerabilities.
