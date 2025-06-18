@@ -77,4 +77,12 @@ export default defineConfig({
   //   url: 'http://localhost:3000',
   //   reuseExistingServer: !process.env.CI,
   // },
+
+  // Add sharding configuration
+  ...(process.env.PLAYWRIGHT_SHARD_COUNT && process.env.PLAYWRIGHT_SHARD_INDEX && {
+    shard: {
+      total: parseInt(process.env.PLAYWRIGHT_SHARD_COUNT, 10),
+      current: parseInt(process.env.PLAYWRIGHT_SHARD_INDEX, 10),
+    },
+  }),
 });
